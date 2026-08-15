@@ -133,7 +133,7 @@ KiranaWala/
 5. Open a Pull Request
 
 
-## Contact
+<!-- ## Contact -->
 
  ## Contact
 
