@@ -135,7 +135,13 @@ KiranaWala/
 
 ## Contact
 
-Jaineesh - pateljaineesh73@gmail.com
+ ## Contact
 
-Project Link: [https://github.com/jaineeshx/KiranaWala]
+Jyatin Singh
+
+- Email: [singhjyatin@gmail.com](mailto:singhjyatin@gmail.com)
+- GitHub: [https://github.com/Jyatin/KiranaWala](https://github.com/Jyatin/KiranaWala)
+- LinkedIn: [https://www.linkedin.com/in/jyatin-singh-88984831b/](https://www.linkedin.com/in/jyatin-singh-88984831b/)
+
+Project Link: [https://github.com/Jyatin/KiranaWala](https://github.com/Jyatin/KiranaWala)
 
