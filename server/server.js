@@ -2,110 +2,166 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const path = require("path");
-// Specify the path to the .env file relative to this server.js file
-require("dotenv").config({ path: path.resolve(__dirname, ".env") });
+
+// Load environment variables from server/.env
+require("dotenv").config({
+  path: path.resolve(__dirname, ".env"),
+});
+
 const customerRoutes = require("./routes/customerRoutes");
 const storeRoutes = require("./routes/storeRoutes");
 
 const app = express();
 
-// Middleware
+// =====================================================
+// MIDDLEWARE
+// =====================================================
+
 app.use(cors());
 app.use(express.json());
+
+// Serve public files
 app.use(express.static(path.join(__dirname, "../public")));
+
+// Serve views
 app.use(express.static(path.join(__dirname, "../views")));
 
-// MongoDB Connection
-// Use the connection string from .env. Mongoose v8+ ignores options like
-// useNewUrlParser/useUnifiedTopology, so don't pass them. Add listeners to
-// surface clearer diagnostics for connection state changes.
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log("Connected to MongoDB successfully");
-  })
-  .catch((err) => {
-    console.error("MongoDB initial connection error:", err);
-  });
+// =====================================================
+// MONGODB CONNECTION
+// =====================================================
 
-// Better runtime diagnostics
-const db = mongoose.connection;
-db.on("connected", () => {
-  console.log(
-    "Mongoose connected to",
-    sanitizeHostFromUri(process.env.MONGO_URI),
-  );
+if (!process.env.MONGO_URI) {
+  console.error("ERROR: MONGO_URI is missing from server/.env");
+} else {
+  mongoose
+    .connect(process.env.MONGO_URI, {
+      serverSelectionTimeoutMS: 8000,
+    })
+    .then(() => {
+      console.log("Connected to MongoDB successfully");
+    })
+    .catch((err) => {
+      console.error("MongoDB connection failed:");
+      console.error(err.message);
+    });
+}
+
+// MongoDB connection status
+mongoose.connection.on("connected", () => {
+  console.log("Mongoose connection established");
 });
-db.on("error", (err) => {
-  console.error("Mongoose connection error:", err);
+
+mongoose.connection.on("error", (err) => {
+  console.error("Mongoose connection error:", err.message);
 });
-db.on("disconnected", () => {
-  console.warn("Mongoose disconnected");
+
+mongoose.connection.on("disconnected", () => {
+  console.log("Mongoose disconnected");
 });
-db.on("reconnected", () => {
+
+mongoose.connection.on("reconnected", () => {
   console.log("Mongoose reconnected");
 });
 
-// Helper to avoid printing full URI with credentials in logs
-function sanitizeHostFromUri(uri) {
-  try {
-    if (!uri) return "(no uri)";
-    // mongodb+srv://host/... or mongodb://user:pass@host:port/db
-    const afterProto = uri.split("//")[1] || uri;
-    // Remove credentials if present
-    const withoutCreds = afterProto.includes("@")
-      ? afterProto.split("@")[1]
-      : afterProto;
-    return withoutCreds.split("/")[0];
-  } catch {
-    return "(unknown host)";
-  }
-}
+// =====================================================
+// API ROUTES
+// =====================================================
 
-// API Routes
 app.use("/api/customer", customerRoutes);
 app.use("/api/store", storeRoutes);
 
-// Page Routes
+// =====================================================
+// PAGE ROUTES
+// =====================================================
+
+// Home page
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "../views/index.html"));
 });
 
+// Customer login
 app.get("/customer/login", (req, res) => {
-  res.sendFile(path.join(__dirname, "../views/customer/login.html"));
+  res.sendFile(
+    path.join(__dirname, "../views/customer/login.html")
+  );
 });
 
+// Customer register
 app.get("/customer/register", (req, res) => {
-  res.sendFile(path.join(__dirname, "../views/customer/register.html"));
+  res.sendFile(
+    path.join(__dirname, "../views/customer/register.html")
+  );
 });
 
+// Customer dashboard
 app.get("/customer/dashboard", (req, res) => {
-  res.sendFile(path.join(__dirname, "../views/customer/dashboard.html"));
+  res.sendFile(
+    path.join(__dirname, "../views/customer/dashboard.html")
+  );
 });
 
-app.get("/store-owner/login", (req, res) => {
-  res.sendFile(path.join(__dirname, "../views/store-owner/login.html"));
-});
-
-app.get("/store-owner/register", (req, res) => {
-  res.sendFile(path.join(__dirname, "../views/store-owner/register.html"));
-});
-
-app.get("/store-owner/dashboard", (req, res) => {
-  res.sendFile(path.join(__dirname, "../views/store-owner/dashboard.html"));
-});
-
-// Add this with your other routes
+// Customer products
 app.get("/customer/products", (req, res) => {
-  res.sendFile(path.join(__dirname, "../views/customer/products.html"));
+  res.sendFile(
+    path.join(__dirname, "../views/customer/products.html")
+  );
 });
 
-// Add this route just before app.listen
-app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
+// Store owner login
+app.get("/store-owner/login", (req, res) => {
+  res.sendFile(
+    path.join(__dirname, "../views/store-owner/login.html")
+  );
 });
+
+// Store owner register
+app.get("/store-owner/register", (req, res) => {
+  res.sendFile(
+    path.join(__dirname, "../views/store-owner/register.html")
+  );
+});
+
+// Store owner dashboard
+app.get("/store-owner/dashboard", (req, res) => {
+  res.sendFile(
+    path.join(__dirname, "../views/store-owner/dashboard.html")
+  );
+});
+
+// =====================================================
+// HEALTH CHECK
+// =====================================================
+
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    message: "KiranaWala server is running",
+  });
+});
+
+// MongoDB health check
+app.get("/health/db", (req, res) => {
+  const states = {
+    0: "disconnected",
+    1: "connected",
+    2: "connecting",
+    3: "disconnecting",
+  };
+
+  const state = mongoose.connection.readyState;
+
+  res.json({
+    database: states[state] || "unknown",
+    connected: state === 1,
+  });
+});
+
+// =====================================================
+// START SERVER
+// =====================================================
 
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
