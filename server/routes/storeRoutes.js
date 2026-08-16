@@ -1,9 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const Store = require("../models/store");
-const StoreOwner = require("../models/storeOwner");
+const User = require("../models/user");
 const Product = require("../models/product");
-const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 // Register store owner
@@ -30,28 +29,30 @@ router.post("/register", async (req, res) => {
     }
 
     // Check if email already exists
-    const existingOwner = await StoreOwner.findOne({ email });
-    if (existingOwner) {
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
       return res.status(400).json({ message: "Email already registered" });
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create new store owner
-    const storeOwner = new StoreOwner({
+    // Create the store-owner user. Password hashing is handled by the
+    // User model's pre-save hook.
+    const user = new User({
       username,
       email,
-      password: hashedPassword,
-      store: {
-        name: storeName,
-        description: storeDescription,
-        category: storeCategory,
-        products: [],
-      },
+      password,
+      role: "store-owner",
     });
+    await user.save();
 
-    await storeOwner.save();
+    // Create the store document owned by this user.
+    const store = new Store({
+      name: storeName,
+      description: storeDescription,
+      category: storeCategory,
+      owner: user._id,
+    });
+    await store.save();
+
     res.status(201).json({ message: "Registration successful" });
   } catch (error) {
     console.error("Registration error:", error);
@@ -64,24 +65,30 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Find store owner
-    const storeOwner = await StoreOwner.findOne({ email });
-    if (!storeOwner) {
+    // Find the store-owner user
+    const user = await User.findOne({ email, role: "store-owner" });
+    if (!user) {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
     // Check password
-    const validPassword = await bcrypt.compare(password, storeOwner.password);
+    const validPassword = await user.comparePassword(password);
     if (!validPassword) {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
+    // Find the store owned by this user
+    const store = await Store.findOne({ owner: user._id });
+    if (!store) {
+      return res.status(404).json({ message: "Store not found" });
+    }
+
     // Create token
-    const token = jwt.sign({ id: storeOwner._id }, "your_jwt_secret", {
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "1h",
     });
 
-    res.json({ token, storeId: storeOwner._id });
+    res.json({ token, storeId: store._id });
   } catch {
     res.status(500).json({ message: "Server error" });
   }
@@ -174,23 +181,27 @@ router.delete("/products/:productId/:storeId", async (req, res) => {
   }
 });
 
+// Get all stores (for customer dashboard)
 router.get("/all", async (req, res) => {
   try {
-    const stores = await StoreOwner.find(
-      {},
-      {
-        username: 1,
-        email: 1,
-        store: 1,
+    const stores = await Store.find().populate("owner", "username email");
+    const result = stores.map((store) => ({
+      _id: store._id,
+      username: store.owner ? store.owner.username : undefined,
+      email: store.owner ? store.owner.email : undefined,
+      store: {
+        name: store.name,
+        description: store.description,
+        category: store.category,
       },
-    );
-    res.json(stores);
+    }));
+    res.json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-// Add this new route
+// Get all products for a store (alternate path used by the products page)
 router.get("/:storeId/products", async (req, res) => {
   try {
     const products = await Product.find({ store: req.params.storeId });
@@ -200,4 +211,4 @@ router.get("/:storeId/products", async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = router; 
