@@ -21,7 +21,7 @@ const storeSchema = new mongoose.Schema({
   ],
   owner: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "StoreOwner",
+    ref: "User",
     required: true,
   },
 });
