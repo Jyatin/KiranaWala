@@ -145,3 +145,7 @@ Jyatin Singh
 
 Project Link: [https://github.com/Jyatin/KiranaWala](https://github.com/Jyatin/KiranaWala)
 
+
+## Development
+
+KiranaWala is currently under active development. The project is being built with a focus on improving the customer shopping experience, store management, inventory management, and order processing.
