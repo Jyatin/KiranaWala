@@ -6427,6 +6427,36 @@ input.kw-has-left-icon.kw-has-right-toggle,
     padding-right: 44px !important;
 }
 
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+    display: none;
+}
+
+/* Keep customer login fields aligned despite the global form layout rules. */
+.auth-form-panel #loginForm .auth-form-group {
+    display: grid !important;
+    grid-template-columns: 80px minmax(0, 1fr);
+    column-gap: 16px;
+    align-items: center;
+}
+
+.auth-form-panel #loginForm .field-label {
+    margin: 0;
+}
+
+.auth-form-panel #loginForm .input-row {
+    min-width: 0;
+}
+
+.auth-form-panel #loginForm .actions-row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.auth-form-panel #loginForm .remember span {
+    white-space: nowrap;
+}
+
 /* =========================================================================
    STRICT HIGH CONTRAST & VISIBILITY ENFORCEMENT ON IMAGE BACKGROUNDS
    ========================================================================= */
