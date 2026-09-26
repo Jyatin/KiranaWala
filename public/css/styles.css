@@ -6457,6 +6457,21 @@ input[type="password"]::-ms-clear {
     white-space: nowrap;
 }
 
+.auth-form-panel #registerForm .auth-form-group {
+    display: grid !important;
+    grid-template-columns: minmax(80px, 140px) minmax(0, 1fr);
+    column-gap: 16px;
+    align-items: center;
+}
+
+.auth-form-panel #registerForm .field-label {
+    margin: 0;
+}
+
+.auth-form-panel #registerForm .input-row {
+    min-width: 0;
+}
+
 /* =========================================================================
    STRICT HIGH CONTRAST & VISIBILITY ENFORCEMENT ON IMAGE BACKGROUNDS
    ========================================================================= */
