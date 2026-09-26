@@ -4250,7 +4250,6 @@ body.landing-page {
 
 .btn-sticky-checkout:hover {
     background: #0045D8;
-}
     border-radius: 8px;
     font-weight: 600;
 }
@@ -4968,6 +4967,10 @@ body.landing-page {
 /* =====================================================
  * PHASE 1 — PREMIUM EDITORIAL ENTRY EXPERIENCE STYLES
  * ===================================================== */
+
+html {
+    scroll-behavior: smooth;
+}
 
 /* Premium Editorial Header (Midnight Slate & Sapphire) */
 .entry-navbar {
