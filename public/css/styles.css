@@ -5403,7 +5403,7 @@ body.landing-page {
     border-color: rgba(255, 255, 255, 0.5);
 }
 
-/* Minimalist Editorial Footer */
+/* Minimalist Editorial Footer (Legacy fallback) */
 .entry-editorial-footer {
     background: #0A192F;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -5442,6 +5442,345 @@ body.landing-page {
 
 .footer-editorial-link:hover {
     color: #60A5FA;
+}
+
+/* =====================================================
+   PORTAL FOOTER (STUDY GROUP HUB INSPIRED RICH NAVY FOOTER)
+   ===================================================== */
+.portal-footer {
+    background: linear-gradient(180deg, #092265 0%, #071c54 100%);
+    color: #ffffff;
+    font-family: var(--font-body, 'Inter', -apple-system, sans-serif);
+    position: relative;
+    z-index: 15;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.portal-footer-top {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 4rem 2.5rem 3rem 2.5rem;
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr 1fr 0.95fr;
+    gap: 0;
+}
+
+/* Vertical column border separation matching the reference design */
+.portal-footer-col {
+    padding: 0 1.75rem;
+    border-right: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.portal-footer-col:first-child {
+    padding-left: 0;
+}
+
+.portal-footer-col:last-child {
+    border-right: none;
+    padding-right: 0;
+}
+
+/* Brand area */
+.portal-brand-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    margin-bottom: 1.25rem;
+    text-decoration: none;
+}
+
+.portal-brand-badge {
+    width: 50px;
+    height: 50px;
+    background: #ffffff;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    flex-shrink: 0;
+}
+
+.portal-brand-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.portal-brand-title {
+    font-family: var(--font-display, 'Plus Jakarta Sans', sans-serif);
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: 0.5px;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.portal-brand-subtitle {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #38bdf8;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.portal-brand-desc {
+    font-size: 0.88rem;
+    line-height: 1.65;
+    color: #cbd5e1;
+    margin-bottom: 1.75rem;
+}
+
+.portal-highlight-text {
+    color: #f59e0b;
+    font-weight: 700;
+}
+
+/* Contact items */
+.portal-contact-item {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin-bottom: 1.15rem;
+    text-decoration: none;
+}
+
+.portal-contact-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.portal-contact-icon.email-icon {
+    background: #f59e0b;
+    color: #0f172a;
+}
+
+.portal-contact-icon.loc-icon {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.portal-contact-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.portal-contact-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #94a3b8;
+    text-transform: uppercase;
+}
+
+.portal-contact-val {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #ffffff;
+    transition: color 0.2s ease;
+}
+
+.portal-contact-item:hover .portal-contact-val {
+    color: #f59e0b;
+}
+
+/* Social media */
+.portal-follow-wrap {
+    margin-top: 1.75rem;
+}
+
+.portal-follow-title {
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #ffffff;
+    margin-bottom: 0.75rem;
+}
+
+.portal-social-row {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+.portal-social-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    text-decoration: none;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+}
+
+.portal-social-btn:hover {
+    transform: translateY(-3px) scale(1.08);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.portal-social-btn.facebook { background: #1877f2; }
+.portal-social-btn.twitter { background: #1da1f2; }
+.portal-social-btn.instagram { background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888); }
+.portal-social-btn.youtube { background: #ff0000; }
+.portal-social-btn.linkedin { background: #0a66c2; }
+
+/* Navigation columns */
+.portal-col-title {
+    font-family: var(--font-display, 'Plus Jakarta Sans', sans-serif);
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    margin: 0;
+}
+
+.portal-col-underline {
+    width: 32px;
+    height: 2.5px;
+    background: #f59e0b;
+    border-radius: 2px;
+    margin-top: 6px;
+    margin-bottom: 1.25rem;
+}
+
+.portal-links-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.portal-links-list a {
+    display: flex;
+    align-items: center;
+    color: #cbd5e1;
+    font-size: 0.88rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.portal-links-list a .portal-chevron {
+    color: #93c5fd;
+    font-size: 1rem;
+    font-weight: 700;
+    margin-right: 0.55rem;
+    transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.portal-links-list a:hover {
+    color: #ffffff;
+    transform: translateX(4px);
+}
+
+.portal-links-list a:hover .portal-chevron {
+    color: #f59e0b;
+}
+
+/* Bottom Bar */
+.portal-footer-bottom {
+    background: #04143a;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1.25rem 2.5rem;
+}
+
+.portal-bottom-container {
+    max-width: 1440px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    font-size: 0.86rem;
+    color: #94a3b8;
+}
+
+.portal-bottom-left {
+    margin: 0;
+    color: #cbd5e1;
+}
+
+.portal-bottom-left strong {
+    color: #ffffff;
+}
+
+.portal-bottom-left .heart-icon {
+    color: #ef4444;
+    display: inline-block;
+    margin: 0 2px;
+}
+
+.portal-bottom-left .team-badge {
+    color: #f59e0b;
+    font-weight: 700;
+}
+
+.portal-bottom-right {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.portal-bottom-right a {
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 0.86rem;
+    transition: color 0.2s ease;
+}
+
+.portal-bottom-right a:hover {
+    color: #f59e0b;
+}
+
+.portal-bottom-right .pipe-divider {
+    color: rgba(255, 255, 255, 0.2);
+}
+
+/* Responsive Grid */
+@media (max-width: 1200px) {
+    .portal-footer-top {
+        grid-template-columns: 1fr 1fr;
+        gap: 2.5rem;
+    }
+    .portal-footer-col {
+        border-right: none;
+        padding: 0;
+    }
+    .portal-footer-col:first-child {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 680px) {
+    .portal-footer-top {
+        grid-template-columns: 1fr;
+        padding: 2.5rem 1.25rem;
+        gap: 2rem;
+    }
+    .portal-footer-col:first-child {
+        grid-column: span 1;
+    }
+    .portal-bottom-container {
+        flex-direction: column;
+        text-align: center;
+        justify-content: center;
+    }
+    .portal-bottom-right {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
 }
 
 
