@@ -485,4 +485,85 @@ describe("Customer Order / Checkout API", () => {
     expect(resSuccess.status).toBe(200);
     expect(resSuccess.body._id).toBe(orderId);
   });
+
+  test("32. Roll back reserved stock when a later item hits a stock conflict", async () => {
+    await request(app)
+      .post("/api/customer/cart/items")
+      .set("Authorization", `Bearer ${token1}`)
+      .send({ productId: product1._id, quantity: 4 });
+    await request(app)
+      .post("/api/customer/cart/items")
+      .set("Authorization", `Bearer ${token1}`)
+      .send({ productId: product2._id, quantity: 3 });
+
+    // Simulate a concurrent purchase draining product2 after the pre-check
+    // but before the atomic stock reservation runs.
+    const realUpdateOne = Product.updateOne.bind(Product);
+    const spy = jest
+      .spyOn(Product, "updateOne")
+      .mockImplementation(async (filter, update, ...rest) => {
+        if (
+          String(filter._id) === String(product2._id) &&
+          update.$inc &&
+          update.$inc.stock < 0
+        ) {
+          return { modifiedCount: 0 };
+        }
+        return realUpdateOne(filter, update, ...rest);
+      });
+
+    const res = await request(app)
+      .post("/api/customer/orders")
+      .set("Authorization", `Bearer ${token1}`)
+      .send({
+        deliveryAddress: {
+          fullName: "Test User",
+          phone: "9876543210",
+          address: "123 Street",
+        },
+      });
+
+    spy.mockRestore();
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/stock conflict/i);
+
+    // product1 was reserved first and must have been restored
+    const p1 = await Product.findById(product1._id);
+    const p2 = await Product.findById(product2._id);
+    expect(p1.stock).toBe(10);
+    expect(p2.stock).toBe(5);
+    expect(await Order.countDocuments({ customer: customer1._id })).toBe(0);
+  });
+
+  test("33. Roll back reserved stock when order persistence fails", async () => {
+    await request(app)
+      .post("/api/customer/cart/items")
+      .set("Authorization", `Bearer ${token1}`)
+      .send({ productId: product1._id, quantity: 2 });
+
+    const saveSpy = jest
+      .spyOn(Order.prototype, "save")
+      .mockRejectedValueOnce(new Error("simulated DB failure"));
+
+    const res = await request(app)
+      .post("/api/customer/orders")
+      .set("Authorization", `Bearer ${token1}`)
+      .send({
+        deliveryAddress: {
+          fullName: "Test User",
+          phone: "9876543210",
+          address: "123 Street",
+        },
+      });
+
+    saveSpy.mockRestore();
+
+    expect(res.status).toBe(500);
+    const p1 = await Product.findById(product1._id);
+    expect(p1.stock).toBe(10);
+    // Cart is preserved so the customer can retry
+    const cart = await Cart.findOne({ user: customer1._id });
+    expect(cart.items.length).toBe(1);
+  });
 });

@@ -636,37 +636,64 @@ router.post("/orders", authenticateToken, async (req, res) => {
     const deliveryFee = 0;
     const total = subtotal + deliveryFee;
 
-    // Atomically update stock for each product
-    for (const item of orderItems) {
-      const updated = await Product.updateOne(
-        { _id: item.product, stock: { $gte: item.quantity } },
-        { $inc: { stock: -item.quantity } },
-      );
-      if (updated.modifiedCount === 0) {
-        return res.status(400).json({
-          message: `Stock conflict: Insufficient stock for product ID ${item.product}`,
-        });
+    // Atomically reserve stock for each product. If any step fails (stock
+    // conflict or order persistence error), every reservation made so far is
+    // rolled back so stock is never leaked without a matching order.
+    const reservedItems = [];
+    const rollbackReservedStock = async () => {
+      for (const reserved of reservedItems) {
+        try {
+          await Product.updateOne(
+            { _id: reserved.product },
+            { $inc: { stock: reserved.quantity } },
+          );
+        } catch (rollbackError) {
+          console.error(
+            `Failed to roll back stock for product ${reserved.product}:`,
+            rollbackError.message,
+          );
+        }
       }
+    };
+
+    let order;
+    try {
+      for (const item of orderItems) {
+        const updated = await Product.updateOne(
+          { _id: item.product, stock: { $gte: item.quantity } },
+          { $inc: { stock: -item.quantity } },
+        );
+        if (updated.modifiedCount === 0) {
+          await rollbackReservedStock();
+          return res.status(400).json({
+            message: `Stock conflict: Insufficient stock for product ID ${item.product}`,
+          });
+        }
+        reservedItems.push(item);
+      }
+
+      order = new Order({
+        customer: userId,
+        store: cart.store,
+        items: orderItems,
+        deliveryAddress: {
+          fullName: deliveryAddress.fullName.trim(),
+          phone: deliveryAddress.phone.trim(),
+          address: deliveryAddress.address.trim(),
+          city: (deliveryAddress.city || "").trim(),
+          pincode: (deliveryAddress.pincode || "").trim(),
+        },
+        subtotal,
+        deliveryFee,
+        total,
+        status: "placed",
+      });
+
+      await order.save();
+    } catch (error) {
+      await rollbackReservedStock();
+      throw error;
     }
-
-    const order = new Order({
-      customer: userId,
-      store: cart.store,
-      items: orderItems,
-      deliveryAddress: {
-        fullName: deliveryAddress.fullName.trim(),
-        phone: deliveryAddress.phone.trim(),
-        address: deliveryAddress.address.trim(),
-        city: (deliveryAddress.city || "").trim(),
-        pincode: (deliveryAddress.pincode || "").trim(),
-      },
-      subtotal,
-      deliveryFee,
-      total,
-      status: "placed",
-    });
-
-    await order.save();
 
     // Clear cart after successful order creation
     cart.items = [];
