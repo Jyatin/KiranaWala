@@ -477,9 +477,32 @@ router.patch(
         });
       }
 
-      // If transitioning to cancelled, restore stock for products
+      // Atomic compare-and-set: the status only changes if the order is STILL
+      // in the status we validated above. Without this guard, a concurrent
+      // request (duplicate click, customer cancel, another staff device) could
+      // slip in between our read and our write, so we would either restore the
+      // stock a second time or overwrite a cancelled order with a live status.
+      const updatedOrder = await Order.findOneAndUpdate(
+        { _id: order._id, store: store._id, status: currentStatus },
+        { $set: { status } },
+        { new: true },
+      );
+
+      if (!updatedOrder) {
+        // Lost the race: someone else already moved this order on.
+        const latest = await Order.findOne({ _id: orderId })
+          .select("status")
+          .lean();
+        return res.status(409).json({
+          message: `Order status changed while processing your request. Current status: '${latest ? latest.status : "unknown"}'. Please refresh and try again.`,
+          currentStatus: latest ? latest.status : null,
+        });
+      }
+
+      // Only the request that actually won the transition restores stock, so
+      // stock is released exactly once per cancelled order.
       if (status === "cancelled") {
-        for (const item of order.items) {
+        for (const item of updatedOrder.items) {
           if (item.product) {
             await Product.updateOne(
               { _id: item.product },
@@ -489,14 +512,11 @@ router.patch(
         }
       }
 
-      order.status = status;
-      await order.save();
-
-      await order.populate("customer", "username email");
+      await updatedOrder.populate("customer", "username email");
 
       res.json({
         message: `Order status updated to ${status}`,
-        order,
+        order: updatedOrder,
       });
     } catch (error) {
       console.error("Update store order status error:", error);
