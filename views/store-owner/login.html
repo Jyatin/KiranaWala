@@ -149,7 +149,17 @@
                     body: JSON.stringify({ email, password })
                 });
 
-                const result = await response.json();
+                // Read response as text first to avoid uncaught syntax errors if server returns HTML/empty body
+                const responseText = await response.text();
+                let result = {};
+
+                try {
+                    result = responseText ? JSON.parse(responseText) : {};
+                } catch (parseErr) {
+                    console.error('Failed to parse response as JSON:', responseText);
+                    throw new Error(`Server returned an invalid response (${response.status} ${response.statusText}). Please try again.`);
+                }
+
                 if (response.ok) {
                     localStorage.setItem('token', result.token);
                     if (result.storeId) {
@@ -157,14 +167,14 @@
                     }
                     window.location.href = '/store-owner/dashboard';
                 } else {
-                    const errorMsg = result.message || result.error || 'Portal authentication error. Please check your credentials.';
+                    const errorMsg = result.message || result.error || `Authentication failed (${response.status}). Please check your credentials.`;
                     showError(errorMsg);
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Open Store Dashboard →';
                 }
             } catch (error) {
-                console.error('Error:', error);
-                showError('An error occurred during merchant login.');
+                console.error('Login Error:', error);
+                showError(error.message || 'An error occurred during merchant login.');
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Open Store Dashboard →';
             }
