@@ -4,200 +4,108 @@
 
 ### **Your local kirana store, online.**
 
-<p>
-  A full-stack grocery platform that connects <b>customers</b> with <b>local store owners</b> — with AI-powered shopping experiences built into the journey.
-</p>
+**AI-assisted local commerce connecting customers with neighbourhood stores.**
 
 <p>
-  <a href="https://github.com/Jyatin/KiranaWala"><img src="https://img.shields.io/badge/⭐%20Star%20Repository-181717?style=for-the-badge&logo=github&logoColor=white" alt="Star Repository"></a>
-  <a href="https://github.com/Jyatin/KiranaWala/issues"><img src="https://img.shields.io/badge/Issues-Open-2ea44f?style=for-the-badge&logo=github" alt="Issues"></a>
-  <a href="https://github.com/Jyatin/KiranaWala/pulls"><img src="https://img.shields.io/badge/Pull%20Requests-Welcome-8957e5?style=for-the-badge&logo=github" alt="Pull Requests"></a>
+  <img src="https://img.shields.io/badge/Node.js-Backend-339933?style=flat-square&logo=node.js&logoColor=white">
+  <img src="https://img.shields.io/badge/Express.js-API-000000?style=flat-square&logo=express&logoColor=white">
+  <img src="https://img.shields.io/badge/MongoDB-Database-47A248?style=flat-square&logo=mongodb&logoColor=white">
+  <img src="https://img.shields.io/badge/JWT-Auth-000000?style=flat-square&logo=jsonwebtokens&logoColor=white">
+  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white">
+  <img src="https://img.shields.io/badge/JavaScript-Full%20Stack-F7DF1E?style=flat-square&logo=javascript&logoColor=black">
 </p>
 
-<p>
-  <img src="https://img.shields.io/badge/Node.js-Backend-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js">
-  <img src="https://img.shields.io/badge/Express.js-API-000000?style=flat-square&logo=express&logoColor=white" alt="Express.js">
-  <img src="https://img.shields.io/badge/MongoDB-Database-47A248?style=flat-square&logo=mongodb&logoColor=white" alt="MongoDB">
-  <img src="https://img.shields.io/badge/JWT-Auth-000000?style=flat-square&logo=jsonwebtokens&logoColor=white" alt="JWT">
-  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
-  <img src="https://img.shields.io/badge/JavaScript-Frontend-F7DF1E?style=flat-square&logo=javascript&logoColor=black" alt="JavaScript">
-</p>
-
-<br>
-
-**Discover stores · Browse products · Shop locally · Manage inventory · Order online · Shop smarter with AI**
+**Discover stores · Browse products · Shop locally · Order online · Shop smarter with AI**
 
 </div>
 
 ---
 
-## ✨ The Idea
+## 💡 What is KiranaWala?
 
-Traditional kirana stores are deeply connected to their local communities, but many still lack the digital infrastructure that larger marketplaces provide.
+KiranaWala brings the neighbourhood grocery experience online without losing its local-store focus.
 
-**KiranaWala is built around a simple idea:** bring local stores online without taking away the familiarity of the neighbourhood shopping experience.
-
-The platform has two primary experiences:
-
-| 🛍️ Customers | 🏪 Store Owners |
+| 🛍️ Customer | 🏪 Store Owner |
 |---|---|
-| Discover local stores | Register & manage stores |
-| Browse products | Manage product inventory |
-| Explore store-specific items | Manage incoming orders |
-| Place grocery orders | Customize store profiles |
-| Get a smoother shopping experience | Operate through a dedicated dashboard |
-
-> **The long-term vision:** make local commerce as convenient digitally as it is in person.
-
----
-
-## 🎯 What Makes KiranaWala Different?
-
-### 🏘️ Local-first commerce
-
-Instead of treating every grocery store as another listing in a giant marketplace, KiranaWala focuses on the relationship between **customers and their nearby stores**.
+| Discover nearby stores | Manage store profile |
+| Browse store products | Manage products & inventory |
+| Build a basket | Manage orders |
+| Place grocery orders | Operate from a dashboard |
+| Use AI-assisted shopping | Serve local customers |
 
 ### 🤖 AI-assisted shopping
 
-The project is evolving beyond a traditional e-commerce flow with an **AI shopping assistant** and **intent-based basket integration**.
-
-The goal is simple: customers should eventually be able to express what they want naturally, while the system helps turn that intent into a useful shopping basket.
-
-### ⚡ Built as a real full-stack system
-
-KiranaWala is not just a frontend mockup. It includes:
-
-- REST-style backend routes
-- MongoDB data models
-- JWT authentication
-- Customer and store-owner workflows
-- Inventory management foundations
-- Order-management foundations
-- Automated CI workflows
-- Docker configuration
-- Testing infrastructure
+Natural-language shopping intent is being connected to **basket generation**, moving the experience beyond conventional product browsing.
 
 ---
 
-## 🧩 Feature Map
+## ✨ Core Capabilities
 
-<details>
-<summary><b>🛍️ Customer Experience</b></summary>
+- 🏘️ **Local-first commerce** — customers and neighbourhood stores
+- 🛍️ **Customer experience** — discovery, products and ordering
+- 🏪 **Store management** — products, inventory and orders
+- 🤖 **AI shopping** — intent → basket workflow
+- 🔐 **JWT authentication** — customer and store-owner access
+- 🗄️ **MongoDB persistence** — users, stores and products
+- ⚙️ **REST API** — Express/Node backend
+- 🐳 **Docker + CI** — reproducible development and automated checks
 
-<br>
+---
 
-- Customer registration
-- Customer authentication
-- Browse local stores
-- View products belonging to a store
-- Place orders
-- Customer-focused shopping interface
-- AI-assisted shopping direction
+## 🔄 End-to-End Workflow
 
-</details>
-
-<details>
-<summary><b>🏪 Store Owner Experience</b></summary>
-
-<br>
-
-- Store-owner registration
-- Store-owner login
-- Store profile management
-- Product management
-- Inventory workflows
-- Order management
-- Dedicated dashboard
-
-</details>
-
-<details>
-<summary><b>🤖 AI Shopping Experience</b></summary>
-
-<br>
-
-The repository includes ongoing work around:
-
-- AI shopping assistant interactions
-- Natural-language shopping intent
-- Intent-to-basket conversion
-- Smarter customer shopping workflows
-
-</details>
-
-<details>
-<summary><b>🛡️ Engineering & Infrastructure</b></summary>
-
-<br>
-
-- JWT-based authentication
-- MongoDB persistence
-- Express.js API layer
-- Automated linting
-- GitHub Actions
-- Docker / Docker Compose
-- Test suite under `server/__tests__`
-
-</details>
+```mermaid
+flowchart TD
+    A[Customer] --> B[Browse Local Stores]
+    B --> C[Explore Products]
+    C --> D[AI Shopping Assistant]
+    D --> E[Intent → Basket]
+    E --> F[Place Order]
+    F --> G[Express / Node API]
+    G --> H[MongoDB]
+    H --> I[Store Owner Dashboard]
+    I --> J[Inventory & Order Management]
+    J --> K[Order Fulfillment]
+```
 
 ---
 
 ## 🏗️ Architecture
 
 ```text
-                         ┌──────────────────────┐
-                         │       Customer       │
-                         │  Browse · Shop · Buy │
-                         └──────────┬───────────┘
-                                    │
-                                    ▼
-                         ┌──────────────────────┐
-                         │      Frontend        │
-                         │   HTML · CSS · JS    │
-                         └──────────┬───────────┘
-                                    │
-                                    ▼
-                         ┌──────────────────────┐
-                         │    Express / Node    │
-                         │     REST API Layer   │
-                         └──────┬─────────┬─────┘
-                                │         │
-                    ┌───────────┘         └────────────┐
-                    ▼                                  ▼
-          ┌─────────────────┐                 ┌─────────────────┐
-          │   MongoDB       │                 │  JWT Auth       │
-          │ Users · Stores  │                 │ Customer / Owner│
-          │ Products · Data │                 └─────────────────┘
-          └─────────────────┘
-                                │
-                                ▼
-                       ┌──────────────────┐
-                       │   AI Experience  │
-                       │ Intent → Basket  │
-                       └──────────────────┘
+Customer
+   │
+   ▼
+Frontend (HTML · CSS · JS)
+   │
+   ▼
+Express / Node REST API
+   │
+   ├──────────────► JWT Authentication
+   │
+   ├──────────────► MongoDB
+   │                 └─ Users · Stores · Products · Orders
+   │
+   └──────────────► AI Experience
+                     └─ Intent → Basket
 
-                         ┌──────────────────────┐
-                         │     Store Owner      │
-                         │ Inventory · Orders   │
-                         └──────────────────────┘
+Store Owner ───────► Dashboard ───────► Inventory & Orders
 ```
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Layer | Technology | Role |
-|---|---|---|
-| 🎨 Frontend | HTML, CSS, JavaScript | Customer & store-owner interfaces |
-| ⚙️ Backend | Node.js | Server runtime |
-| 🔌 API | Express.js | Application/API layer |
-| 🗄️ Database | MongoDB | Persistent application data |
-| 🔐 Authentication | JWT | Secure authentication flow |
-| 📦 Package Manager | npm | Dependency management |
-| 🧪 Testing | Project test suite | Backend testing |
-| 🧹 Code Quality | ESLint | Static analysis & linting |
-| 🔄 CI/CD | GitHub Actions | Automated checks |
-| 🐳 Deployment | Docker / Docker Compose | Containerized development |
+| Layer | Technology |
+|---|---|
+| Frontend | HTML, CSS, JavaScript |
+| Backend | Node.js, Express.js |
+| Database | MongoDB |
+| Authentication | JWT |
+| Testing | Project test suite |
+| Quality | ESLint |
+| CI/CD | GitHub Actions |
+| Containers | Docker / Docker Compose |
 
 ---
 
@@ -205,108 +113,52 @@ The repository includes ongoing work around:
 
 ```text
 KiranaWala/
-│
-├── .github/
-│   └── workflows/
-│       ├── lint.yml
-│       └── node.js.yml
-│
+├── .github/workflows/       # CI & lint workflows
 ├── public/
-│   ├── css/
-│   │   └── styles.css
-│   ├── images/
-│   │   └── auth/
-│   │       └── store-background.jpg
-│   ├── js/
-│   │   ├── customer.js
-│   │   ├── store-owner-dashboard.js
-│   │   └── store-owner.js
-│   ├── .dockerignore
-│   └── Dockerfile
-│
+│   ├── css/                 # Styles
+│   ├── images/              # Assets
+│   └── js/                  # Client-side logic
 ├── server/
-│   ├── __tests__/
-│   ├── models/
-│   │   ├── product.js
-│   │   ├── store.js
-│   │   ├── storeOwner.js
-│   │   └── user.js
-│   ├── routes/
-│   │   ├── customerRoutes.js
-│   │   └── storeRoutes.js
-│   ├── .dockerignore
-│   ├── Dockerfile
-│   ├── eslint.config.mjs
-│   ├── package-lock.json
-│   ├── package.json
-│   └── server.js
-│
+│   ├── models/              # MongoDB models
+│   ├── routes/              # API routes
+│   ├── __tests__/           # Backend tests
+│   └── server.js            # API server
 ├── views/
-│   ├── customer/
-│   ├── store-owner/
-│   │   ├── dashboard.html
-│   │   ├── login.html
-│   │   └── register.html
-│   └── index.html
-│
-├── .gitignore
+│   ├── customer/            # Customer UI
+│   └── store-owner/         # Store dashboard & auth
 ├── docker-compose.yml
-├── package-lock.json
 ├── package.json
 └── README.md
 ```
 
 ---
 
-## 🔌 API
+## 🔌 API Surface
 
-### Customer
+| Area | Endpoint | Purpose |
+|---|---|---|
+| Customer | `POST /api/customer/register` | Register customer |
+| Customer | `POST /api/customer/login` | Authenticate customer |
+| Store Owner | `POST /api/store/register` | Register store owner |
+| Store Owner | `POST /api/store/login` | Authenticate store owner |
 
-| Method | Endpoint | Description |
-|:---:|---|---|
-| `POST` | `/api/customer/register` | Register a customer |
-| `POST` | `/api/customer/login` | Authenticate a customer |
-
-### Store Owner
-
-| Method | Endpoint | Description |
-|:---:|---|---|
-| `POST` | `/api/store/register` | Register a store owner |
-| `POST` | `/api/store/login` | Authenticate a store owner |
-
-> 🚧 The API surface is actively evolving as shopping, inventory, order-management and AI capabilities expand.
+> API capabilities are evolving alongside inventory, ordering and AI features.
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Quick Start
 
-### 1. Prerequisites
+### Prerequisites
 
-Install:
-
-- **Node.js** v14+
-- **MongoDB**
-- **npm**
-- **Docker** *(optional)*
-
-### 2. Clone
+**Node.js 14+ · MongoDB · npm · Docker (optional)**
 
 ```bash
 git clone https://github.com/Jyatin/KiranaWala.git
 cd KiranaWala
-```
-
-### 3. Install dependencies
-
-```bash
 npm install
 ```
 
-If you are working inside the server package as well, install its dependencies according to `server/package.json`.
-
-### 4. Configure environment variables
-
-Create a `.env` file for the server configuration:
+Create `.env`:
 
 ```env
 MONGO_URI=your_mongodb_uri
@@ -314,9 +166,7 @@ JWT_SECRET=your_secret_key
 PORT=3000
 ```
 
-⚠️ **Never commit real secrets, database credentials, or `.env` files.**
-
-### 5. Start the server
+Run:
 
 Production mode:
 
@@ -342,125 +192,53 @@ http://localhost:3000
 ## 🐳 Run with Docker
 
 KiranaWala includes Docker configuration for containerized development.
+Or with Docker:
 
 ```bash
 docker compose up --build
 ```
 
-Stop the containers:
-
-```bash
-docker compose down
-```
+> Never commit real credentials or `.env` files.
 
 ---
 
-## 🧪 Testing & Quality
+## 🧪 Engineering
 
-The repository includes a backend test directory:
+The repository includes backend tests, ESLint configuration, GitHub Actions workflows and Docker configuration.
 
 ```text
 server/__tests__/
+.github/workflows/
+Dockerfile / docker-compose.yml
 ```
-
-GitHub Actions workflows are also included for automated project checks and linting.
-
-Before opening a pull request, make sure to:
-
-```bash
-# Install dependencies
-npm install
-
-# Run the project's available scripts
-npm test
-npm run lint
-```
-
-> If a script is not available in your current package configuration, use the scripts defined in the relevant `package.json`.
 
 ---
 
-## 🌱 Development Roadmap
+## 🗺️ Roadmap
 
-### Shopping
-
-- [ ] Richer product discovery
-- [ ] Improved cart experience
-- [ ] Complete order lifecycle
-- [ ] Better local-store discovery
-
-### Store Management
-
-- [ ] Advanced inventory controls
-- [ ] Better order dashboards
-- [ ] Store analytics
-- [ ] Improved product management
-
-### AI
-
+- [x] Customer & store-owner authentication
+- [x] Store/product foundations
 - [x] AI shopping assistant foundation
 - [x] Intent-based basket integration
-- [ ] Smarter shopping intent extraction
-- [ ] Context-aware recommendations
-- [ ] Personalized shopping assistance
-
-### Engineering
-
-- [ ] Expand automated test coverage
-- [ ] Improve API documentation
-- [ ] Strengthen observability
-- [ ] Improve deployment workflows
+- [ ] Complete order lifecycle
+- [ ] Advanced inventory & analytics
+- [ ] Context-aware AI recommendations
+- [ ] Expanded automated test coverage
 
 ---
 
 ## 🤝 Contributing
 
-Contributions, ideas and improvements are welcome.
-
-### Contribution workflow
+Contributions are welcome.
 
 ```bash
-# Fork the repository, then clone your fork
-git clone https://github.com/YOUR_USERNAME/KiranaWala.git
-cd KiranaWala
-
-# Create a feature branch
 git checkout -b feature/your-feature
-
-# Make your changes
-
-# Commit
 git add .
 git commit -m "feat: describe your change"
-
-# Push
 git push origin feature/your-feature
 ```
 
-Then open a **Pull Request** and explain:
-
-- What changed
-- Why it was needed
-- How you tested it
-- Any screenshots or API examples that help reviewers
-
-### 💡 Good first contributions
-
-- UI improvements
-- Test coverage
-- API documentation
-- Bug fixes
-- Accessibility improvements
-- Performance improvements
-- Developer experience improvements
-
----
-
-## 📌 Current Development
-
-KiranaWala is actively being developed with a focus on making local grocery shopping **simpler for customers and more powerful for store owners**.
-
-Recent development includes work on the **AI shopping assistant** and **intent-based basket integration**, while the underlying customer, store, inventory and ordering architecture continues to grow.
+Then open a Pull Request with what changed, why, and how it was tested.
 
 ---
 
@@ -474,28 +252,6 @@ Recent development includes work on the **AI shopping assistant** and **intent-b
 <a href="https://www.linkedin.com/in/jyatin-singh-88984831b/">LinkedIn</a> ·
 <a href="mailto:singhjyatin@gmail.com">Email</a>
 
-</div>
-
----
-
-## ⭐ Support the Project
-
-If you like the idea behind KiranaWala, consider giving the repository a **⭐ star** and sharing feedback through **Issues** or **Pull Requests**.
-
-<div align="center">
-
-<a href="https://github.com/Jyatin/KiranaWala">⭐ Star KiranaWala</a> ·
-<a href="https://github.com/Jyatin/KiranaWala/issues">🐛 Report an Issue</a> ·
-<a href="https://github.com/Jyatin/KiranaWala/pulls">🚀 Contribute</a>
-
-</div>
-
----
-
-<div align="center">
-
 **Built with ❤️ for better local commerce.**
-
-`KiranaWala` · Local stores, connected digitally.
 
 </div>
