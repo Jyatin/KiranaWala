@@ -318,8 +318,17 @@ PORT=3000
 
 ### 5. Start the server
 
+Production mode:
+
 ```bash
 node server/server.js
+```
+
+Development mode (with auto-reload):
+
+```bash
+cd server
+npm run dev
 ```
 
 Open:
