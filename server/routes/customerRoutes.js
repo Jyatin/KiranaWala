@@ -221,6 +221,106 @@ router.get("/cart", authenticateToken, async (req, res) => {
   }
 });
 
+// -----------------------------------------------------
+// Cart write helpers (concurrency-safe)
+// -----------------------------------------------------
+
+const MAX_CART_WRITE_ATTEMPTS = 5;
+
+/**
+ * Applies a mutation to the user's cart and persists it with optimistic
+ * locking, retrying on conflict.
+ *
+ * Why: every cart write is a read-modify-write on a document that holds an
+ * array. When two requests overlap (double-click, two tabs, client retry),
+ * the slower one validates and writes against a stale snapshot. Without a
+ * version check Mongoose persists array pushes blindly, which created
+ * duplicate lines for the same product, bypassed the per-product stock cap
+ * (each request only saw its own quantity), and made concurrent first-time
+ * cart creation fail on the unique `user` index with a 500.
+ *
+ * How: `cart.increment()` adds the document version to the save filter, so a
+ * stale save fails with a VersionError instead of overwriting newer state. A
+ * duplicate-key error (two requests creating the first cart) is handled the
+ * same way. On either conflict we reload the cart and re-run `mutate`, so
+ * every validation (store consistency, stock caps, ...) is re-evaluated
+ * against fresh data.
+ *
+ * @param {string} userId
+ * @param {(cart: object|null) => Promise<object|undefined>|object|undefined} mutate
+ *   Mutates the cart in place. Return `{ abort: { status, body } }` to stop
+ *   with an HTTP response, `{ noop: true }` to skip saving, or nothing to save.
+ * @param {{ createIfMissing?: boolean }} [options]
+ * @returns {Promise<{ cart?: object, abort?: object, noop?: boolean }>}
+ */
+async function mutateCartWithRetry(
+  userId,
+  mutate,
+  { createIfMissing = false } = {},
+) {
+  for (let attempt = 1; attempt <= MAX_CART_WRITE_ATTEMPTS; attempt++) {
+    let cart = await Cart.findOne({ user: userId });
+    const isNewCart = !cart && createIfMissing;
+    if (isNewCart) {
+      cart = new Cart({ user: userId, items: [], store: null });
+    }
+
+    const outcome = await mutate(cart);
+    if (outcome && outcome.abort) return outcome;
+    if (outcome && outcome.noop) return { cart, noop: true };
+
+    try {
+      if (!isNewCart) {
+        cart.increment(); // include __v in the save filter (optimistic lock)
+      }
+      await cart.save();
+      return { cart };
+    } catch (error) {
+      const isConflict =
+        error && (error.name === "VersionError" || error.code === 11000);
+      if (!isConflict) throw error;
+      // Lost a race: loop to reload the fresh cart and re-validate.
+    }
+  }
+
+  return {
+    abort: {
+      status: 409,
+      body: {
+        message: "Your cart was modified by another request. Please try again.",
+      },
+    },
+  };
+}
+
+/**
+ * Populates a cart and shapes it for API responses.
+ */
+async function formatCartResponse(cart) {
+  await cart.populate("items.product");
+  await cart.populate("store", "name category description");
+
+  let subtotal = 0;
+  const items = cart.items.map((i) => {
+    const itemSub = (i.product ? i.product.price : 0) * i.quantity;
+    subtotal += itemSub;
+    return {
+      _id: i._id,
+      product: i.product,
+      quantity: i.quantity,
+      subtotal: itemSub,
+    };
+  });
+
+  return {
+    _id: cart._id,
+    store: cart.store,
+    items,
+    subtotal,
+    total: subtotal,
+  };
+}
+
 // POST /api/customer/cart/items
 router.post("/cart/items", authenticateToken, async (req, res) => {
   try {
@@ -238,81 +338,80 @@ router.post("/cart/items", authenticateToken, async (req, res) => {
       return res.status(400).json({ message: "Invalid product ID" });
     }
 
-    const product = await Product.findById(productId);
-    if (!product) {
-      return res.status(404).json({ message: "Product not found" });
-    }
+    const result = await mutateCartWithRetry(
+      userId,
+      async (cart) => {
+        // Re-read the product on every attempt so stock checks are fresh.
+        const product = await Product.findById(productId);
+        if (!product) {
+          return {
+            abort: { status: 404, body: { message: "Product not found" } },
+          };
+        }
 
-    if (product.available === false || product.stock <= 0) {
-      return res
-        .status(400)
-        .json({ message: "Product is currently out of stock." });
-    }
+        if (product.available === false || product.stock <= 0) {
+          return {
+            abort: {
+              status: 400,
+              body: { message: "Product is currently out of stock." },
+            },
+          };
+        }
 
-    let cart = await Cart.findOne({ user: userId });
-    if (!cart) {
-      cart = new Cart({ user: userId, items: [], store: product.store });
-    }
+        // Store consistency check (ONE ACTIVE STORE PER CART)
+        if (
+          cart.store &&
+          cart.items.length > 0 &&
+          cart.store.toString() !== product.store.toString()
+        ) {
+          return {
+            abort: {
+              status: 400,
+              body: {
+                message:
+                  "Your cart contains items from another store. Clear your cart to shop from this store.",
+                code: "CROSS_STORE_CONFLICT",
+              },
+            },
+          };
+        }
 
-    // Store consistency check (ONE ACTIVE STORE PER CART)
-    if (
-      cart.store &&
-      cart.items.length > 0 &&
-      cart.store.toString() !== product.store.toString()
-    ) {
-      return res.status(400).json({
-        message:
-          "Your cart contains items from another store. Clear your cart to shop from this store.",
-        code: "CROSS_STORE_CONFLICT",
-      });
-    }
+        const existingIndex = cart.items.findIndex(
+          (item) => item.product.toString() === productId,
+        );
+        const existingQty =
+          existingIndex > -1 ? cart.items[existingIndex].quantity : 0;
+        const newQty = existingQty + parsedQty;
 
-    const existingIndex = cart.items.findIndex(
-      (item) => item.product.toString() === productId,
+        if (newQty > product.stock) {
+          return {
+            abort: {
+              status: 400,
+              body: {
+                message: `Only ${product.stock} units are available.`,
+                availableStock: product.stock,
+              },
+            },
+          };
+        }
+
+        if (existingIndex > -1) {
+          cart.items[existingIndex].quantity = newQty;
+        } else {
+          cart.items.push({ product: productId, quantity: parsedQty });
+        }
+
+        cart.store = product.store;
+      },
+      { createIfMissing: true },
     );
-    const existingQty =
-      existingIndex > -1 ? cart.items[existingIndex].quantity : 0;
-    const newQty = existingQty + parsedQty;
 
-    if (newQty > product.stock) {
-      return res.status(400).json({
-        message: `Only ${product.stock} units are available.`,
-        availableStock: product.stock,
-      });
+    if (result.abort) {
+      return res.status(result.abort.status).json(result.abort.body);
     }
 
-    if (existingIndex > -1) {
-      cart.items[existingIndex].quantity = newQty;
-    } else {
-      cart.items.push({ product: productId, quantity: parsedQty });
-    }
-
-    cart.store = product.store;
-    await cart.save();
-
-    await cart.populate("items.product");
-    await cart.populate("store", "name category description");
-
-    let subtotal = 0;
-    const formattedItems = cart.items.map((i) => {
-      const itemSub = (i.product ? i.product.price : 0) * i.quantity;
-      subtotal += itemSub;
-      return {
-        _id: i._id,
-        product: i.product,
-        quantity: i.quantity,
-        subtotal: itemSub,
-      };
-    });
-
-    res.status(200).json({
-      _id: cart._id,
-      store: cart.store,
-      items: formattedItems,
-      subtotal,
-      total: subtotal,
-      message: "Item added to cart",
-    });
+    const payload = await formatCartResponse(result.cart);
+    res.status(200).json({ ...payload, message: "Item added to cart" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -336,55 +435,52 @@ router.patch("/cart/items/:productId", authenticateToken, async (req, res) => {
       return res.status(400).json({ message: "Invalid product ID" });
     }
 
-    const cart = await Cart.findOne({ user: userId });
-    if (!cart) {
-      return res.status(404).json({ message: "Cart not found" });
-    }
+    const result = await mutateCartWithRetry(userId, async (cart) => {
+      if (!cart) {
+        return {
+          abort: { status: 404, body: { message: "Cart not found" } },
+        };
+      }
 
-    const itemIndex = cart.items.findIndex(
-      (i) => i.product.toString() === productId,
-    );
-    if (itemIndex === -1) {
-      return res.status(404).json({ message: "Item not in cart" });
-    }
+      const itemIndex = cart.items.findIndex(
+        (i) => i.product.toString() === productId,
+      );
+      if (itemIndex === -1) {
+        return {
+          abort: { status: 404, body: { message: "Item not in cart" } },
+        };
+      }
 
-    const product = await Product.findById(productId);
-    if (!product) {
-      return res.status(404).json({ message: "Product no longer exists" });
-    }
+      const product = await Product.findById(productId);
+      if (!product) {
+        return {
+          abort: {
+            status: 404,
+            body: { message: "Product no longer exists" },
+          },
+        };
+      }
 
-    if (parsedQty > product.stock) {
-      return res.status(400).json({
-        message: `Only ${product.stock} units are available.`,
-        availableStock: product.stock,
-      });
-    }
+      if (parsedQty > product.stock) {
+        return {
+          abort: {
+            status: 400,
+            body: {
+              message: `Only ${product.stock} units are available.`,
+              availableStock: product.stock,
+            },
+          },
+        };
+      }
 
-    cart.items[itemIndex].quantity = parsedQty;
-    await cart.save();
-
-    await cart.populate("items.product");
-    await cart.populate("store", "name category description");
-
-    let subtotal = 0;
-    const formattedItems = cart.items.map((i) => {
-      const itemSub = (i.product ? i.product.price : 0) * i.quantity;
-      subtotal += itemSub;
-      return {
-        _id: i._id,
-        product: i.product,
-        quantity: i.quantity,
-        subtotal: itemSub,
-      };
+      cart.items[itemIndex].quantity = parsedQty;
     });
 
-    res.json({
-      _id: cart._id,
-      store: cart.store,
-      items: formattedItems,
-      subtotal,
-      total: subtotal,
-    });
+    if (result.abort) {
+      return res.status(result.abort.status).json(result.abort.body);
+    }
+
+    res.json(await formatCartResponse(result.cart));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -400,18 +496,24 @@ router.delete("/cart/items/:productId", authenticateToken, async (req, res) => {
       return res.status(400).json({ message: "Invalid product ID" });
     }
 
-    const cart = await Cart.findOne({ user: userId });
-    if (!cart) {
-      return res.status(404).json({ message: "Cart not found" });
+    const result = await mutateCartWithRetry(userId, async (cart) => {
+      if (!cart) {
+        return {
+          abort: { status: 404, body: { message: "Cart not found" } },
+        };
+      }
+
+      cart.items = cart.items.filter((i) => i.product.toString() !== productId);
+      if (cart.items.length === 0) {
+        cart.store = null;
+      }
+    });
+
+    if (result.abort) {
+      return res.status(result.abort.status).json(result.abort.body);
     }
 
-    cart.items = cart.items.filter((i) => i.product.toString() !== productId);
-    if (cart.items.length === 0) {
-      cart.store = null;
-    }
-    await cart.save();
-
-    res.json({ message: "Item removed from cart", cart });
+    res.json({ message: "Item removed from cart", cart: result.cart });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -421,12 +523,17 @@ router.delete("/cart/items/:productId", authenticateToken, async (req, res) => {
 router.delete("/cart", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id || req.user.userId;
-    let cart = await Cart.findOne({ user: userId });
-    if (cart) {
+
+    const result = await mutateCartWithRetry(userId, async (cart) => {
+      if (!cart) return { noop: true };
       cart.items = [];
       cart.store = null;
-      await cart.save();
+    });
+
+    if (result.abort) {
+      return res.status(result.abort.status).json(result.abort.body);
     }
+
     res.json({ message: "Cart cleared successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -454,107 +561,118 @@ router.post("/cart/basket", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Target store not found" });
     }
 
-    let cart = await Cart.findOne({ user: userId });
-    if (!cart) {
-      cart = new Cart({ user: userId, items: [], store: storeId });
+    const result = await mutateCartWithRetry(
+      userId,
+      async (cart) => {
+        // Cross-store conflict handling
+        if (
+          cart.store &&
+          cart.items.length > 0 &&
+          cart.store.toString() !== storeId.toString()
+        ) {
+          if (!clearExisting) {
+            return {
+              abort: {
+                status: 400,
+                body: {
+                  message:
+                    "Your cart contains items from another store. Clear your cart to add this basket.",
+                  code: "CROSS_STORE_CONFLICT",
+                  existingStoreId: cart.store,
+                  targetStoreId: storeId,
+                },
+              },
+            };
+          }
+          cart.items = [];
+        }
+
+        // Verify all products in database
+        for (const item of items) {
+          const productId = item.productId || item._id;
+          const quantity = parseInt(item.quantity, 10) || 1;
+
+          if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
+            return {
+              abort: {
+                status: 400,
+                body: { message: "Invalid product ID in basket" },
+              },
+            };
+          }
+
+          const product = await Product.findById(productId);
+          if (!product) {
+            return {
+              abort: {
+                status: 404,
+                body: { message: "A product in this basket no longer exists" },
+              },
+            };
+          }
+
+          if (product.store.toString() !== storeId.toString()) {
+            return {
+              abort: {
+                status: 400,
+                body: {
+                  message: `Product '${product.name}' does not belong to target store`,
+                },
+              },
+            };
+          }
+
+          if (product.available === false || product.stock <= 0) {
+            return {
+              abort: {
+                status: 400,
+                body: {
+                  message: `Product '${product.name}' is currently out of stock.`,
+                  outOfStockProduct: product.name,
+                },
+              },
+            };
+          }
+
+          const existingIndex = cart.items.findIndex(
+            (i) => i.product.toString() === productId.toString(),
+          );
+
+          const existingQty =
+            existingIndex > -1 ? cart.items[existingIndex].quantity : 0;
+          const targetQty = clearExisting ? quantity : existingQty + quantity;
+
+          if (targetQty > product.stock) {
+            return {
+              abort: {
+                status: 400,
+                body: {
+                  message: `Only ${product.stock} units of '${product.name}' are available.`,
+                  availableStock: product.stock,
+                },
+              },
+            };
+          }
+
+          if (existingIndex > -1) {
+            cart.items[existingIndex].quantity = targetQty;
+          } else {
+            cart.items.push({ product: productId, quantity: targetQty });
+          }
+        }
+
+        cart.store = storeId;
+      },
+      { createIfMissing: true },
+    );
+
+    if (result.abort) {
+      return res.status(result.abort.status).json(result.abort.body);
     }
 
-    // Cross-store conflict handling
-    if (
-      cart.store &&
-      cart.items.length > 0 &&
-      cart.store.toString() !== storeId.toString()
-    ) {
-      if (!clearExisting) {
-        return res.status(400).json({
-          message:
-            "Your cart contains items from another store. Clear your cart to add this basket.",
-          code: "CROSS_STORE_CONFLICT",
-          existingStoreId: cart.store,
-          targetStoreId: storeId,
-        });
-      } else {
-        cart.items = [];
-      }
-    }
-
-    // Verify all products in database
-    for (const item of items) {
-      const productId = item.productId || item._id;
-      const quantity = parseInt(item.quantity, 10) || 1;
-
-      if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
-        return res
-          .status(400)
-          .json({ message: "Invalid product ID in basket" });
-      }
-
-      const product = await Product.findById(productId);
-      if (!product) {
-        return res
-          .status(404)
-          .json({ message: "A product in this basket no longer exists" });
-      }
-
-      if (product.store.toString() !== storeId.toString()) {
-        return res.status(400).json({
-          message: `Product '${product.name}' does not belong to target store`,
-        });
-      }
-
-      if (product.available === false || product.stock <= 0) {
-        return res.status(400).json({
-          message: `Product '${product.name}' is currently out of stock.`,
-          outOfStockProduct: product.name,
-        });
-      }
-
-      const existingIndex = cart.items.findIndex(
-        (i) => i.product.toString() === productId.toString(),
-      );
-
-      const existingQty =
-        existingIndex > -1 ? cart.items[existingIndex].quantity : 0;
-      const targetQty = clearExisting ? quantity : existingQty + quantity;
-
-      if (targetQty > product.stock) {
-        return res.status(400).json({
-          message: `Only ${product.stock} units of '${product.name}' are available.`,
-          availableStock: product.stock,
-        });
-      }
-
-      if (existingIndex > -1) {
-        cart.items[existingIndex].quantity = targetQty;
-      } else {
-        cart.items.push({ product: productId, quantity: targetQty });
-      }
-    }
-
-    cart.store = storeId;
-    await cart.save();
-
-    await cart.populate("items.product");
-    await cart.populate("store", "name category description");
-
-    let subtotal = 0;
-    const formattedItems = cart.items.map((i) => {
-      const itemSub = (i.product ? i.product.price : 0) * i.quantity;
-      subtotal += itemSub;
-      return {
-        _id: i._id,
-        product: i.product,
-        quantity: i.quantity,
-        subtotal: itemSub,
-      };
-    });
-
+    const payload = await formatCartResponse(result.cart);
     res.status(200).json({
-      _id: cart._id,
-      store: cart.store,
-      items: formattedItems,
-      subtotal,
-      total: subtotal,
+      ...payload,
       message: "Complete basket added to cart successfully",
     });
   } catch (error) {
