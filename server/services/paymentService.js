@@ -5,6 +5,18 @@ const Order = require("../models/order");
 const Product = require("../models/product");
 const InventoryService = require("./inventoryService");
 const CouponService = require("./couponService");
+const { transitionOrder } = require("./orderStateService");
+
+// Statuses that mean "payment already recorded and the order is live".
+const CONFIRMED_STATUSES = [
+  "confirmed",
+  "packing",
+  "ready",
+  "assigned",
+  "picked_up",
+  "out_for_delivery",
+  "delivered",
+];
 
 // =====================================================
 // PAYMENT PROVIDER ABSTRACTION
@@ -262,7 +274,20 @@ class PaymentService {
   /**
    * Verify and confirm order after successful payment.
    * Commits inventory, increments coupon usage, and updates timeline.
-   * Idempotent: calling twice with same data returns success without side effects.
+   *
+   * Concurrency-safe and idempotent: the pending -> confirmed transition is a
+   * single atomic compare-and-set (see orderStateService), so when the client
+   * verify call and the Razorpay webhook arrive together exactly one of them
+   * commits inventory / records coupon usage and the other reports
+   * `alreadyConfirmed`.
+   *
+   * Late payments are handled explicitly instead of corrupting stock:
+   *  - order was marked payment_failed (earlier failure / expired reservation)
+   *    and the customer then paid successfully: stock is re-reserved and the
+   *    order is confirmed; if the stock is gone the order moves to
+   *    refund_pending.
+   *  - order was cancelled before the payment arrived: the order moves to
+   *    refund_pending (money was received, stock was already released).
    */
   static async confirmPayment({
     orderId,
@@ -277,25 +302,18 @@ class PaymentService {
     }
 
     // Idempotent: already confirmed/paid
-    if (
-      (order.paymentStatus === "paid" || order.paymentStatus === "captured") &&
-      [
-        "confirmed",
-        "packing",
-        "ready",
-        "assigned",
-        "picked_up",
-        "out_for_delivery",
-        "delivered",
-      ].includes(order.status)
-    ) {
+    if (this._isConfirmed(order)) {
       return { success: true, alreadyConfirmed: true, order };
     }
 
-    // Verify signature (skip if already verified via webhook or a confirmed path)
+    // Verify signature (webhook signatures are verified at the route level)
+    const paymentFields = {
+      paymentStatus: "paid",
+      razorpayOrderId: razorpayOrderId || order.razorpayOrderId,
+      razorpayPaymentId: razorpayPaymentId || order.razorpayPaymentId,
+    };
     if (source === "webhook") {
-      // Webhook signature is verified at the route level
-      order.webhookVerified = true;
+      paymentFields.webhookVerified = true;
     } else {
       const isValid = this.verifySignature({
         razorpayOrderId,
@@ -305,48 +323,156 @@ class PaymentService {
 
       if (!isValid) {
         throw new Error(
-          "Invalid Razorpay payment signature. Payment verification failed."
+          "Invalid Razorpay payment signature. Payment verification failed.",
         );
       }
-      order.signatureVerified = true;
+      paymentFields.signatureVerified = true;
+      if (razorpaySignature) {
+        paymentFields.razorpaySignature = razorpaySignature;
+      }
     }
 
-    order.paymentStatus = "paid";
-    order.status = "confirmed";
-    order.razorpayOrderId = razorpayOrderId || order.razorpayOrderId;
-    order.razorpayPaymentId = razorpayPaymentId || order.razorpayPaymentId;
-    if (razorpaySignature && source !== "webhook") {
-      order.razorpaySignature = razorpaySignature;
+    const viaLabel =
+      source === "webhook" ? "Razorpay webhook" : "client verification";
+    const notPaidYet = { paymentStatus: { $ne: "paid" } };
+
+    // Re-evaluate against fresh state if another request changes the order
+    // between our attempts.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      // 1) Normal path: the order is waiting for payment (stock is reserved).
+      //    "placed" covers an order whose stock was already committed at
+      //    checkout (COD): it is confirmed without touching stock again.
+      const won = await transitionOrder(orderId, {
+        from: ["pending_payment", "placed"],
+        to: "confirmed",
+        set: paymentFields,
+        note: `Payment verified via ${viaLabel} (Txn: ${razorpayPaymentId})`,
+        filter: notPaidYet,
+      });
+
+      if (won) {
+        if (won.previous.status === "pending_payment") {
+          await InventoryService.commitReservation(won.previous.items);
+          if (won.previous.couponCode) {
+            await CouponService.recordCouponUsage(won.previous.couponCode);
+          }
+        }
+        await won.order.populate("store", "name");
+        return {
+          success: true,
+          message: "Payment verified and order confirmed",
+          order: won.order,
+        };
+      }
+
+      // 2) Lost (or the order was never payable): look at the current state.
+      const latest = await Order.findById(orderId).populate("store", "name");
+      if (!latest) {
+        throw new Error("Order not found");
+      }
+
+      if (latest.paymentStatus === "paid") {
+        if (this._isConfirmed(latest)) {
+          return { success: true, alreadyConfirmed: true, order: latest };
+        }
+        return {
+          success: false,
+          requiresRefund: latest.status === "refund_pending",
+          message: `Payment was already recorded for this order (status: ${latest.status})`,
+          order: latest,
+        };
+      }
+
+      // 3) Earlier failure / expired reservation, then the customer paid:
+      //    re-reserve the stock and confirm if it is still available.
+      if (latest.status === "payment_failed") {
+        let reserved = true;
+        try {
+          await InventoryService.reserveStock(latest.items, 15);
+        } catch {
+          reserved = false;
+        }
+
+        if (reserved) {
+          const revived = await transitionOrder(orderId, {
+            from: ["payment_failed"],
+            to: "confirmed",
+            set: paymentFields,
+            note: `Payment verified via ${viaLabel} after an earlier failure; stock re-reserved (Txn: ${razorpayPaymentId})`,
+            filter: notPaidYet,
+          });
+          if (revived) {
+            await InventoryService.commitReservation(revived.previous.items);
+            if (revived.previous.couponCode) {
+              await CouponService.recordCouponUsage(
+                revived.previous.couponCode,
+              );
+            }
+            await revived.order.populate("store", "name");
+            return {
+              success: true,
+              message: "Payment verified and order confirmed",
+              order: revived.order,
+            };
+          }
+          // Someone else changed the order first: give the stock back, retry.
+          await InventoryService.releaseReservation(latest.items);
+          continue;
+        }
+      }
+
+      // 4) Payment received but the order cannot be fulfilled (cancelled, or
+      //    stock sold out in the meantime): queue a refund.
+      if (["cancelled", "payment_failed"].includes(latest.status)) {
+        const queued = await transitionOrder(orderId, {
+          from: [latest.status],
+          to: "refund_pending",
+          set: paymentFields,
+          note: `Payment received (Txn: ${razorpayPaymentId}) but the order was ${
+            latest.status === "cancelled" ? "cancelled" : "no longer reservable"
+          }; refund queued`,
+          filter: notPaidYet,
+        });
+        if (queued) {
+          await queued.order.populate("store", "name");
+          return {
+            success: false,
+            requiresRefund: true,
+            message:
+              "Payment was received after the order could no longer be fulfilled. A refund has been queued.",
+            order: queued.order,
+          };
+        }
+        continue;
+      }
+
+      throw new Error(
+        `Cannot confirm payment for order in status: ${latest.status}`,
+      );
     }
-    order.timeline = order.timeline || [];
-    order.timeline.push({
-      status: "confirmed",
-      note: `Payment verified via ${source === "webhook" ? "Razorpay webhook" : "client verification"} (Txn: ${razorpayPaymentId})`,
-      timestamp: new Date(),
-    });
 
-    await order.save();
+    throw new Error(
+      "Order state changed while confirming payment. Please retry.",
+    );
+  }
 
-    // Commit inventory from reserved to sold
-    await InventoryService.commitReservation(order.items);
-
-    // Increment coupon usage if used
-    if (order.couponCode) {
-      await CouponService.recordCouponUsage(order.couponCode);
-    }
-
-    return {
-      success: true,
-      message: "Payment verified and order confirmed",
-      order,
-    };
+  static _isConfirmed(order) {
+    return (
+      order.paymentStatus === "paid" &&
+      CONFIRMED_STATUSES.includes(order.status)
+    );
   }
 
   /**
    * Handle payment failure.
    * Releases inventory reservation and updates order status.
    */
-  static async handlePaymentFailure({ orderId, razorpayOrderId, razorpayPaymentId, reason }) {
+  static async handlePaymentFailure({
+    orderId,
+    razorpayOrderId,
+    razorpayPaymentId,
+    reason,
+  }) {
     const order = await Order.findById(orderId);
     if (!order) {
       // Try finding by razorpayOrderId
@@ -357,33 +483,47 @@ class PaymentService {
     return this._failOrder(order, razorpayPaymentId, reason);
   }
 
+  /**
+   * Atomically fails an order that is still awaiting payment and releases its
+   * reservation. A paid, cancelled or already-failed order is never touched,
+   * and the reservation is released exactly once.
+   */
   static async _failOrder(order, razorpayPaymentId, reason) {
-    if (order.paymentStatus === "paid" || order.paymentStatus === "captured") {
-      return { success: false, message: "Order already paid — cannot mark as failed" };
-    }
-    if (order.status === "payment_failed") {
-      return { success: true, alreadyFailed: true, order };
-    }
-
-    order.paymentStatus = "failed";
-    order.status = "payment_failed";
-    if (razorpayPaymentId) order.razorpayPaymentId = razorpayPaymentId;
-    order.timeline = order.timeline || [];
-    order.timeline.push({
-      status: "payment_failed",
+    const won = await transitionOrder(order._id, {
+      from: ["pending_payment"],
+      to: "payment_failed",
+      set: {
+        paymentStatus: "failed",
+        ...(razorpayPaymentId ? { razorpayPaymentId } : {}),
+      },
       note: `Payment failed. ${reason || "No reason provided."}`,
-      timestamp: new Date(),
+      filter: { paymentStatus: { $ne: "paid" } },
     });
 
-    await order.save();
+    if (won) {
+      // Release reserved inventory
+      await InventoryService.releaseReservation(won.previous.items);
+      return {
+        success: true,
+        message: "Payment failure recorded, inventory released",
+        order: won.order,
+      };
+    }
 
-    // Release reserved inventory
-    await InventoryService.releaseReservation(order.items);
-
+    const latest = await Order.findById(order._id);
+    if (!latest) throw new Error("Order not found");
+    if (latest.paymentStatus === "paid") {
+      return {
+        success: false,
+        message: "Order already paid — cannot mark as failed",
+      };
+    }
+    if (latest.status === "payment_failed") {
+      return { success: true, alreadyFailed: true, order: latest };
+    }
     return {
-      success: true,
-      message: "Payment failure recorded, inventory released",
-      order,
+      success: false,
+      message: `Order is no longer awaiting payment (status: ${latest.status})`,
     };
   }
 

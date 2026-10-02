@@ -3,6 +3,7 @@
 const mongoose = require("mongoose");
 const Product = require("../models/product");
 const Order = require("../models/order");
+const { transitionOrder } = require("./orderStateService");
 
 /**
  * Smart Inventory Service
@@ -130,28 +131,39 @@ class InventoryService {
 
   /**
    * Scan for expired pending_payment orders and release their reservations.
+   *
+   * Each order is expired with an atomic transition, so an order that is paid,
+   * cancelled or already expired by a concurrent request is skipped and its
+   * reservation is released at most once.
+   *
+   * @returns {Promise<number>} number of orders actually expired by this call
    */
   static async cleanupExpiredReservations() {
     try {
       const expirationThreshold = new Date(Date.now() - 15 * 60 * 1000);
       const expiredOrders = await Order.find({
         status: "pending_payment",
-        createdAt: { $lt: expirationThreshold }
+        createdAt: { $lt: expirationThreshold },
       });
 
-      for (const order of expiredOrders) {
-        order.status = "payment_failed";
-        order.timeline = order.timeline || [];
-        order.timeline.push({
-          status: "payment_failed",
+      let expiredCount = 0;
+      for (const candidate of expiredOrders) {
+        const expired = await transitionOrder(candidate._id, {
+          from: ["pending_payment"],
+          to: "payment_failed",
           note: "Reservation expired after 15 minutes of inactivity",
-          timestamp: new Date()
+          filter: {
+            paymentStatus: { $ne: "paid" },
+            createdAt: { $lt: expirationThreshold },
+          },
         });
-        await order.save();
-        await this.releaseReservation(order.items);
+        if (!expired) continue; // paid / cancelled / expired meanwhile
+
+        await this.releaseReservation(expired.previous.items);
+        expiredCount++;
       }
 
-      return expiredOrders.length;
+      return expiredCount;
     } catch (err) {
       console.error("Cleanup expired reservations error:", err);
       return 0;
