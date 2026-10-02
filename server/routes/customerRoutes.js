@@ -8,6 +8,7 @@ const Product = require("../models/product");
 const Cart = require("../models/cart");
 const Order = require("../models/order");
 const { authenticateToken } = require("../middleware/authMiddleware");
+const { transitionOrder } = require("../services/orderStateService");
 const mongoose = require("mongoose");
 const InventoryService = require("../services/inventoryService");
 const CouponService = require("../services/couponService");
@@ -1130,23 +1131,36 @@ router.patch("/orders/:orderId/cancel", authenticateToken, async (req, res) => {
       });
     }
 
-    const previousStatus = existingOrder.status;
-    existingOrder.status = "cancelled";
-    existingOrder.timeline = existingOrder.timeline || [];
-    existingOrder.timeline.push({
-      status: "cancelled",
+    // Atomic compare-and-set: only one request can move the order to
+    // cancelled, and only that request may release / restore stock. A stale
+    // read (double click, concurrent payment confirmation, store-owner action)
+    // can no longer cancel a paid order or release the same stock twice.
+    const cancelled = await transitionOrder(existingOrder._id, {
+      from: ["placed", "pending_payment"],
+      to: "cancelled",
       note: "Cancelled by customer",
-      timestamp: new Date(),
+      filter: { customer: userId },
     });
-    await existingOrder.save();
+
+    if (!cancelled) {
+      const latest = await Order.findOne({ _id: orderId, customer: userId });
+      return res.status(409).json({
+        success: false,
+        message: `Order status changed while processing your request. Current status: ${latest ? latest.status : "unknown"}`,
+        currentStatus: latest ? latest.status : null,
+      });
+    }
+
+    const previousStatus = cancelled.previous.status;
+    const orderItems = cancelled.previous.items;
 
     // Smart Inventory Restoration
     if (previousStatus === "pending_payment") {
       // Order had reserved stock, release back to available
-      await InventoryService.releaseReservation(existingOrder.items);
+      await InventoryService.releaseReservation(orderItems);
     } else {
       // Order had committed stock, restore stock and availableStock
-      for (const item of existingOrder.items) {
+      for (const item of orderItems) {
         if (item.product) {
           await Product.updateOne(
             { _id: item.product },
@@ -1156,12 +1170,13 @@ router.patch("/orders/:orderId/cancel", authenticateToken, async (req, res) => {
       }
     }
 
-    await existingOrder.populate("store", "name category description location");
+    const updatedOrder = cancelled.order;
+    await updatedOrder.populate("store", "name category description location");
 
     res.json({
       success: true,
       message: "Order cancelled successfully",
-      order: existingOrder,
+      order: updatedOrder,
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
