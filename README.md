@@ -177,6 +177,10 @@ node server/server.js
 Development mode (with auto-reload):
 
 ```bash
+# From project root:
+npm run dev
+
+# Or directly from the server directory:
 cd server
 npm run dev
 ```
