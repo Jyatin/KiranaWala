@@ -109,7 +109,7 @@ router.post("/verify", authenticateToken, async (req, res) => {
 // Idempotent Razorpay Webhook Handler.
 // Handles: payment.captured, payment.failed, refund.created, refund.processed
 // =====================================================
-router.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+router.post("/webhook", async (req, res) => {
   try {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     const signature = req.headers["x-razorpay-signature"];
@@ -130,16 +130,15 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
         .json({ success: false, message: "Missing x-razorpay-signature header" });
     }
 
-    // Parse body — handle both raw buffer and already-parsed JSON
-    let body;
-    let rawBody;
-    if (Buffer.isBuffer(req.body)) {
-      rawBody = req.body.toString("utf8");
-      body = JSON.parse(rawBody);
-    } else {
-      body = req.body;
-      rawBody = JSON.stringify(req.body);
-    }
+    // Get raw wire bytes and parsed JSON body
+    const rawBody =
+      req.rawBody ||
+      (Buffer.isBuffer(req.body)
+        ? req.body
+        : Buffer.from(typeof req.body === "string" ? req.body : JSON.stringify(req.body)));
+    const body = Buffer.isBuffer(req.body)
+      ? JSON.parse(req.body.toString("utf8"))
+      : req.body;
 
     const expectedSig = crypto
       .createHmac("sha256", webhookSecret)

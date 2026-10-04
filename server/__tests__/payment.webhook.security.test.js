@@ -10,7 +10,13 @@ const Order = require("../models/order");
 const paymentRoutes = require("../routes/paymentRoutes");
 
 const app = express();
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 app.use("/api/payments", paymentRoutes);
 
 describe("Razorpay Webhook Fail-Closed Security Tests", () => {
