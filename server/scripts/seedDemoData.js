@@ -365,11 +365,39 @@ function getProductsForStoreIndex(storeIndex) {
   return items;
 }
 
+function validateSeedEnvironment() {
+  const isProduction = process.env.NODE_ENV === "production";
+  const allowRemote = process.env.ALLOW_SEED_REMOTE === "true";
+  const mongoUri = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/kiranawala";
+
+  // Check if URI points to localhost, 127.0.0.1, or mongodb-memory-server
+  const isLocalDb =
+    mongoUri.includes("localhost") ||
+    mongoUri.includes("127.0.0.1") ||
+    mongoUri.includes("mongodb-memory-server");
+
+  if (isProduction && !allowRemote) {
+    const msg =
+      "SAFETY CHECK FAILED: Seeding is blocked in production environment (NODE_ENV=production). Set ALLOW_SEED_REMOTE=true to override.";
+    console.error(`[SEED ERROR] ${msg}`);
+    throw new Error(msg);
+  }
+
+  if (!isLocalDb && !allowRemote) {
+    const msg = `SAFETY CHECK FAILED: Seeding is blocked on non-local database (${mongoUri}). Set ALLOW_SEED_REMOTE=true to override.`;
+    console.error(`[SEED ERROR] ${msg}`);
+    throw new Error(msg);
+  }
+
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // DB Connection Helper
 // ---------------------------------------------------------------------------
 
 async function connectMongo() {
+  validateSeedEnvironment();
   const primaryUri = process.env.MONGO_URI;
   const localUri = "mongodb://127.0.0.1:27017/kiranawala";
 
@@ -399,6 +427,7 @@ async function connectMongo() {
 // ---------------------------------------------------------------------------
 
 async function seedData(options = {}) {
+  validateSeedEnvironment();
   const closeConnection = options.closeConnection !== false;
   try {
     // Only connect if not already connected (when called from devServer, connection is already open)
@@ -623,5 +652,5 @@ if (require.main === module) {
   seedData({ closeConnection: true });
 }
 
-module.exports = { seedData };
+module.exports = { seedData, validateSeedEnvironment };
 
