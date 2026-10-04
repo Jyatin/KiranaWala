@@ -18,6 +18,7 @@ const reviewRoutes = require("./routes/reviewRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const InventoryService = require("./services/inventoryService");
+const ReconciliationService = require("./services/reconciliationService");
 
 const app = express();
 
@@ -117,6 +118,7 @@ mongoose.connection.on("connected", () => {
   console.log("Mongoose connection established");
   if (process.env.NODE_ENV !== "test") {
     InventoryService.startCleanupWorker(60000);
+    ReconciliationService.startReconciliationWorker(300000);
   }
 });
 
