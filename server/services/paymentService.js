@@ -389,7 +389,8 @@ class PaymentService {
 
   /**
    * Process full or partial refund.
-   * Enforces store ownership at query level and validates order status.
+   * Atomically claims order in 'refund_pending' state before calling provider
+   * to eliminate double-refund race conditions, and conditionally sets final state.
    */
   static async processRefund({
     orderId,
@@ -397,27 +398,36 @@ class PaymentService {
     reason = "Customer requested cancellation",
     storeId,
   }) {
-    const query = { _id: orderId };
+    // Atomically claim the order before calling provider
+    const claimFilter = {
+      _id: orderId,
+      paymentStatus: { $in: ["paid", "captured"] },
+      status: { $nin: ["refunded", "refund_pending", "cancelled"] },
+    };
     if (storeId) {
-      query.store = storeId;
+      claimFilter.store = storeId;
     }
 
-    const order = await Order.findOne(query);
+    const order = await Order.findOneAndUpdate(
+      claimFilter,
+      {
+        $set: {
+          paymentStatus: "refund_pending",
+          status: "refund_pending",
+        },
+        $push: {
+          timeline: {
+            status: "refund_pending",
+            note: `Refund initiated. Reason: ${reason}`,
+            timestamp: new Date(),
+          },
+        },
+      },
+      { new: true }
+    );
+
     if (!order) {
-      throw new Error("Order not found or unauthorized");
-    }
-
-    if (order.paymentStatus !== "paid" && order.paymentStatus !== "captured") {
-      throw new Error(
-        `Cannot refund order with payment status '${order.paymentStatus}'`
-      );
-    }
-
-    // State guard: Ensure order has not already been refunded or in invalid terminal state
-    if (order.status === "refunded" || order.status === "refund_pending" || order.status === "cancelled") {
-      throw new Error(
-        `Cannot refund order in status '${order.status}'`
-      );
+      throw new Error("Cannot refund order: order not found or not eligible for refund");
     }
 
     const refundAmount = amount ? Math.min(amount, order.total) : order.total;
@@ -437,21 +447,60 @@ class PaymentService {
         });
       } catch (err) {
         console.error("Razorpay refund API error:", err.message);
-        // Continue with local state update even if Razorpay call fails
-        // The webhook will reconcile later
+        const isTimeoutOrAmbiguous =
+          err.code === "ETIMEDOUT" ||
+          err.code === "ECONNRESET" ||
+          err.name === "TimeoutError" ||
+          err.message?.toLowerCase().includes("timeout") ||
+          err.message?.toLowerCase().includes("network");
+
+        if (isTimeoutOrAmbiguous) {
+          // Leave in refund_pending
+          // TODO: Reconciliation job will verify final status from Razorpay API/webhook
+          throw new Error(
+            `Refund status ambiguous due to network/timeout error: ${err.message}. Order remains in refund_pending for reconciliation.`
+          );
+        }
+
+        // Definite error from provider — revert back to paid/confirmed
+        await Order.findOneAndUpdate(
+          { _id: order._id, paymentStatus: "refund_pending" },
+          {
+            $set: {
+              paymentStatus: "paid",
+              status: "confirmed",
+            },
+            $push: {
+              timeline: {
+                status: "confirmed",
+                note: `Refund failed at provider (${err.message}). Status reverted to paid.`,
+                timestamp: new Date(),
+              },
+            },
+          }
+        );
+        throw new Error(`Refund failed at payment provider: ${err.message}`);
       }
     }
 
-    order.paymentStatus = "refunded";
-    order.status = "refunded";
-    order.timeline = order.timeline || [];
-    order.timeline.push({
-      status: "refunded",
-      note: `Refund of ₹${refundAmount} processed. Reason: ${reason}`,
-      timestamp: new Date(),
-    });
-
-    await order.save();
+    // Provider succeeded (or sandbox / mock) — set final refunded state with conditional update
+    const refundedOrder = await Order.findOneAndUpdate(
+      { _id: order._id, paymentStatus: "refund_pending" },
+      {
+        $set: {
+          paymentStatus: "refunded",
+          status: "refunded",
+        },
+        $push: {
+          timeline: {
+            status: "refunded",
+            note: `Refund of ₹${refundAmount} processed. Reason: ${reason}`,
+            timestamp: new Date(),
+          },
+        },
+      },
+      { new: true }
+    );
 
     // Restore stock
     for (const item of order.items) {
@@ -460,21 +509,21 @@ class PaymentService {
           { _id: item.product },
           {
             $inc: {
-              stock: item.quantity,
               availableStock: item.quantity,
               soldStock: -item.quantity,
             },
           }
-        ).catch(() => {});
+        );
       }
     }
 
     return {
       success: true,
-      message: `Refund of ₹${refundAmount} processed successfully`,
-      order,
+      message: `Refund of ₹${refundAmount} initiated successfully`,
+      order: refundedOrder || order,
     };
   }
 }
 
 module.exports = PaymentService;
+
