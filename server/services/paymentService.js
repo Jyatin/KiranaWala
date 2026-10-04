@@ -63,7 +63,15 @@ class RazorpayPaymentProvider {
       .createHmac("sha256", this.keySecret)
       .update(payload)
       .digest("hex");
-    return expectedSignature === razorpaySignature;
+    
+    if (typeof razorpaySignature !== "string" || expectedSignature.length !== razorpaySignature.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(
+      Buffer.from(expectedSignature, "utf8"),
+      Buffer.from(razorpaySignature, "utf8")
+    );
   }
 
   verifyWebhookSignature(body, signature, webhookSecret) {
