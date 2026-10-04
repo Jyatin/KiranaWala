@@ -1099,6 +1099,7 @@ router.get("/orders", authenticateToken, requireCustomer, async (req, res) => {
   try {
     const userId = req.user.id || req.user.userId;
     const orders = await Order.find({ customer: userId })
+      .select("+deliveryOtp")
       .sort({ createdAt: -1 })
       .populate("store", "name category");
     res.json(orders);
@@ -1120,7 +1121,9 @@ router.get("/orders/:orderId", authenticateToken, requireCustomer, async (req, r
     const order = await Order.findOne({
       _id: orderId,
       customer: userId,
-    }).populate("store", "name category description");
+    })
+      .select("+deliveryOtp")
+      .populate("store", "name category description");
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });

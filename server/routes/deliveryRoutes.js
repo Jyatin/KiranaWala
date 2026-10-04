@@ -201,7 +201,7 @@ router.patch(
         return res.status(404).json({ success: false, message: "Order not found" });
       }
 
-      const order = await Order.findOne(orderFilter);
+      const order = await Order.findOne(orderFilter).select("+deliveryOtp");
       if (!order) {
         return res.status(404).json({ success: false, message: "Order not found" });
       }
@@ -352,6 +352,7 @@ router.get("/orders/:id/track", authenticateToken, async (req, res) => {
     }
 
     const order = await Order.findOne(orderFilter)
+      .select("+deliveryOtp")
       .populate("store", "name category location address rating phone")
       .populate("deliveryPartner", "username phone");
 
