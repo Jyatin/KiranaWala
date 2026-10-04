@@ -17,6 +17,7 @@ const deliveryRoutes = require("./routes/deliveryRoutes");
 const reviewRoutes = require("./routes/reviewRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
+const InventoryService = require("./services/inventoryService");
 
 const app = express();
 
@@ -114,6 +115,9 @@ connectMongo();
 // MongoDB connection status
 mongoose.connection.on("connected", () => {
   console.log("Mongoose connection established");
+  if (process.env.NODE_ENV !== "test") {
+    InventoryService.startCleanupWorker(60000);
+  }
 });
 
 mongoose.connection.on("error", (err) => {

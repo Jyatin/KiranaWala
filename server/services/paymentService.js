@@ -292,6 +292,11 @@ class PaymentService {
       return { success: true, alreadyConfirmed: true, order };
     }
 
+    // Reject if order is in an expired, cancelled, or failed terminal state
+    if (["payment_failed", "cancelled", "refunded", "refund_pending"].includes(order.status)) {
+      throw new Error(`Order cannot be confirmed: order is in '${order.status}' state (reservation expired or cancelled)`);
+    }
+
     // Verify signature (skip if already verified via webhook or a confirmed path)
     if (source === "webhook") {
       // Webhook signature is verified at the route level
