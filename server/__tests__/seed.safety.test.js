@@ -60,4 +60,38 @@ describe("Seed Script Safety Guards", () => {
       /Seeding is blocked in production environment/
     );
   });
+
+  test("6. Refuses spoofed subdomain host (mongodb+srv://localhost.example.com/db)", () => {
+    process.env.NODE_ENV = "development";
+    delete process.env.ALLOW_SEED_REMOTE;
+    process.env.MONGO_URI = "mongodb+srv://localhost.example.com/db";
+
+    expect(() => validateSeedEnvironment()).toThrow(
+      /Seeding is blocked on non-local database/
+    );
+  });
+
+  test("7. Refuses spoofed auth username (mongodb://user:localhost@db.example.com/db)", () => {
+    process.env.NODE_ENV = "development";
+    delete process.env.ALLOW_SEED_REMOTE;
+    process.env.MONGO_URI = "mongodb://user:localhost@db.example.com/db";
+
+    expect(() => validateSeedEnvironment()).toThrow(
+      /Seeding is blocked on non-local database/
+    );
+  });
+
+  test("8. Allows legitimate local connection strings (mongodb://localhost:27017/db, ::1)", () => {
+    process.env.NODE_ENV = "development";
+    delete process.env.ALLOW_SEED_REMOTE;
+
+    process.env.MONGO_URI = "mongodb://localhost:27017/db";
+    expect(validateSeedEnvironment()).toBe(true);
+
+    process.env.MONGO_URI = "mongodb://127.0.0.1:27017/db";
+    expect(validateSeedEnvironment()).toBe(true);
+
+    process.env.MONGO_URI = "mongodb://[::1]:27017/db";
+    expect(validateSeedEnvironment()).toBe(true);
+  });
 });

@@ -370,11 +370,26 @@ function validateSeedEnvironment() {
   const allowRemote = process.env.ALLOW_SEED_REMOTE === "true";
   const mongoUri = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/kiranawala";
 
-  // Check if URI points to localhost, 127.0.0.1, or mongodb-memory-server
-  const isLocalDb =
-    mongoUri.includes("localhost") ||
-    mongoUri.includes("127.0.0.1") ||
-    mongoUri.includes("mongodb-memory-server");
+  // Parse host(s) from MONGO_URI
+  let withoutProtocol = mongoUri.replace(/^mongodb(\+srv)?:\/\//i, "");
+  withoutProtocol = withoutProtocol.split("?")[0];
+  withoutProtocol = withoutProtocol.split("/")[0];
+
+  // Remove auth credentials if present
+  const atIndex = withoutProtocol.lastIndexOf("@");
+  const hostListStr = atIndex !== -1 ? withoutProtocol.substring(atIndex + 1) : withoutProtocol;
+
+  const rawEntries = hostListStr.split(",").map((h) => h.trim()).filter(Boolean);
+  const ALLOWED_LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "mongodb-memory-server"]);
+
+  const hosts = rawEntries.map((entry) => {
+    if (entry.startsWith("[") && entry.includes("]")) {
+      return entry.substring(1, entry.indexOf("]")).toLowerCase();
+    }
+    return entry.split(":")[0].toLowerCase();
+  });
+
+  const isLocalDb = hosts.length > 0 && hosts.every((host) => ALLOWED_LOCAL_HOSTS.has(host));
 
   if (isProduction && !allowRemote) {
     const msg =
