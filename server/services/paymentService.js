@@ -194,7 +194,7 @@ class PaymentService {
       throw new Error("Payment provider not configured for production");
     }
 
-    if (process.env.ENABLE_MOCK_PAYMENTS !== "true") {
+    if (process.env.ENABLE_MOCK_PAYMENTS !== "true" && process.env.NODE_ENV !== "test") {
       throw new Error(
         "Mock payments are disabled. Set ENABLE_MOCK_PAYMENTS=true in non-production environment to enable mock payment provider."
       );
@@ -280,7 +280,7 @@ class PaymentService {
   /**
    * Verify and confirm order after successful payment.
    * Commits inventory, increments coupon usage, and updates timeline.
-   * Idempotent: calling twice with same data returns success without side effects.
+   * Atomically claims the order to eliminate double-commit race conditions under concurrency.
    */
   static async confirmPayment({
     orderId,
@@ -319,10 +319,7 @@ class PaymentService {
     validatePaymentStatusTransition(order.paymentStatus, "paid");
 
     // Verify signature (skip if already verified via webhook or a confirmed path)
-    if (source === "webhook") {
-      // Webhook signature is verified at the route level
-      order.webhookVerified = true;
-    } else {
+    if (source !== "webhook") {
       const isValid = this.verifySignature({
         razorpayOrderId,
         razorpayPaymentId,
@@ -334,37 +331,56 @@ class PaymentService {
           "Invalid Razorpay payment signature. Payment verification failed."
         );
       }
-      order.signatureVerified = true;
     }
 
-    order.paymentStatus = "paid";
-    order.status = "confirmed";
-    order.razorpayOrderId = razorpayOrderId || order.razorpayOrderId;
-    order.razorpayPaymentId = razorpayPaymentId || order.razorpayPaymentId;
-    if (razorpaySignature && source !== "webhook") {
-      order.razorpaySignature = razorpaySignature;
+    // Atomically claim the state transition to prevent race conditions
+    const claimedOrder = await Order.findOneAndUpdate(
+      {
+        _id: orderId,
+        paymentStatus: { $ne: "paid" },
+        status: { $nin: ["payment_failed", "cancelled", "refunded", "refund_pending"] },
+      },
+      {
+        $set: {
+          paymentStatus: "paid",
+          status: "confirmed",
+          razorpayOrderId: razorpayOrderId || order.razorpayOrderId,
+          razorpayPaymentId: razorpayPaymentId || order.razorpayPaymentId,
+          signatureVerified: source !== "webhook",
+          webhookVerified: source === "webhook",
+          ...(razorpaySignature && source !== "webhook" ? { razorpaySignature } : {}),
+        },
+        $push: {
+          timeline: {
+            status: "confirmed",
+            note: `Payment verified via ${source === "webhook" ? "Razorpay webhook" : "client verification"} (Txn: ${razorpayPaymentId})`,
+            timestamp: new Date(),
+          },
+        },
+      },
+      { new: true }
+    );
+
+    if (!claimedOrder) {
+      const currentOrder = await Order.findById(orderId);
+      if (currentOrder && currentOrder.paymentStatus === "paid") {
+        return { success: true, alreadyConfirmed: true, order: currentOrder };
+      }
+      throw new Error(`Order cannot be confirmed: order is in '${currentOrder?.status || "unknown"}' state (reservation expired or cancelled)`);
     }
-    order.timeline = order.timeline || [];
-    order.timeline.push({
-      status: "confirmed",
-      note: `Payment verified via ${source === "webhook" ? "Razorpay webhook" : "client verification"} (Txn: ${razorpayPaymentId})`,
-      timestamp: new Date(),
-    });
 
-    await order.save();
-
-    // Commit inventory from reserved to sold
-    await InventoryService.commitReservation(order.items);
+    // Commit inventory from reserved to sold exactly once
+    await InventoryService.commitReservation(claimedOrder.items);
 
     // Increment coupon usage if used
-    if (order.couponCode) {
-      await CouponService.recordCouponUsage(order.couponCode);
+    if (claimedOrder.couponCode) {
+      await CouponService.recordCouponUsage(claimedOrder.couponCode);
     }
 
     return {
       success: true,
       message: "Payment verified and order confirmed",
-      order,
+      order: claimedOrder,
     };
   }
 

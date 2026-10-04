@@ -6,6 +6,7 @@ const Store = require("../models/store");
 const Product = require("../models/product");
 const Cart = require("../models/cart");
 const aiTools = require("../services/ai/aiTools");
+const { validateAndApplyCartAction } = require("../services/ai/aiCartTools");
 
 describe("Phase 8: AI Shopping Assistant Tool-Calling System & Evaluation Benchmark", () => {
   let customer, storeA, storeB, productsStoreA, productsStoreB;
@@ -131,7 +132,7 @@ describe("Phase 8: AI Shopping Assistant Tool-Calling System & Evaluation Benchm
       {
         name: "Nonexistent Product ID",
         fn: () =>
-          aiTools.validateAndApplyCartAction({
+          validateAndApplyCartAction({
             userId: customer._id.toString(),
             productId: new mongoose.Types.ObjectId().toString(),
             quantity: 1,
@@ -141,7 +142,7 @@ describe("Phase 8: AI Shopping Assistant Tool-Calling System & Evaluation Benchm
       {
         name: "Invalid ObjectId String",
         fn: () =>
-          aiTools.validateAndApplyCartAction({
+          validateAndApplyCartAction({
             userId: customer._id.toString(),
             productId: "malicious_sql_or_nosql_injection'; DROP TABLE;",
             quantity: 1,
@@ -151,7 +152,7 @@ describe("Phase 8: AI Shopping Assistant Tool-Calling System & Evaluation Benchm
       {
         name: "Negative Quantity",
         fn: () =>
-          aiTools.validateAndApplyCartAction({
+          validateAndApplyCartAction({
             userId: customer._id.toString(),
             productId: productsStoreA[0]._id.toString(),
             quantity: -5,
@@ -161,7 +162,7 @@ describe("Phase 8: AI Shopping Assistant Tool-Calling System & Evaluation Benchm
       {
         name: "Zero Quantity",
         fn: () =>
-          aiTools.validateAndApplyCartAction({
+          validateAndApplyCartAction({
             userId: customer._id.toString(),
             productId: productsStoreA[0]._id.toString(),
             quantity: 0,
@@ -171,7 +172,7 @@ describe("Phase 8: AI Shopping Assistant Tool-Calling System & Evaluation Benchm
       {
         name: "Excessive Quantity (>50)",
         fn: () =>
-          aiTools.validateAndApplyCartAction({
+          validateAndApplyCartAction({
             userId: customer._id.toString(),
             productId: productsStoreA[0]._id.toString(),
             quantity: 9999,
@@ -181,7 +182,7 @@ describe("Phase 8: AI Shopping Assistant Tool-Calling System & Evaluation Benchm
       {
         name: "Out of Stock Product",
         fn: () =>
-          aiTools.validateAndApplyCartAction({
+          validateAndApplyCartAction({
             userId: customer._id.toString(),
             productId: productsStoreA[3]._id.toString(), // Sugar with 0 stock
             quantity: 1,
@@ -201,7 +202,7 @@ describe("Phase 8: AI Shopping Assistant Tool-Calling System & Evaluation Benchm
 
   test("2. Cross-Store Cart Isolation: Attempting to mix products across stores is rejected safely", async () => {
     // First, add item from Store A
-    const addStoreA = await aiTools.validateAndApplyCartAction({
+    const addStoreA = await validateAndApplyCartAction({
       userId: customer._id.toString(),
       productId: productsStoreA[0]._id.toString(),
       quantity: 1,
@@ -210,7 +211,7 @@ describe("Phase 8: AI Shopping Assistant Tool-Calling System & Evaluation Benchm
 
     // Now, attempt to add item from Store B into same customer cart
     await expect(
-      aiTools.validateAndApplyCartAction({
+      validateAndApplyCartAction({
         userId: customer._id.toString(),
         productId: productsStoreB[0]._id.toString(),
         quantity: 1,
@@ -255,7 +256,7 @@ describe("Phase 8: AI Shopping Assistant Tool-Calling System & Evaluation Benchm
     const productSelectionAccuracy = (correctProductMatches / EVALUATION_DATASET.length) * 100;
 
     // 3. Cart action execution verification
-    const cartAction = await aiTools.validateAndApplyCartAction({
+    const cartAction = await validateAndApplyCartAction({
       userId: customer._id.toString(),
       productId: productsStoreA[1]._id.toString(), // Milk
       quantity: 2,
