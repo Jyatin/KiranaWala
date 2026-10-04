@@ -408,7 +408,7 @@ class PaymentService {
       claimFilter.store = storeId;
     }
 
-    const order = await Order.findOneAndUpdate(
+    const originalOrder = await Order.findOneAndUpdate(
       claimFilter,
       {
         $set: {
@@ -423,12 +423,16 @@ class PaymentService {
           },
         },
       },
-      { new: true }
+      { new: false }
     );
 
-    if (!order) {
+    if (!originalOrder) {
       throw new Error("Cannot refund order: order not found or not eligible for refund");
     }
+
+    const originalStatus = originalOrder.status;
+    const originalPaymentStatus = originalOrder.paymentStatus;
+    const order = originalOrder;
 
     const refundAmount = amount ? Math.min(amount, order.total) : order.total;
     const refundAmountInPaise = Math.round(refundAmount * 100);
@@ -462,18 +466,18 @@ class PaymentService {
           );
         }
 
-        // Definite error from provider — revert back to paid/confirmed
+        // Definite error from provider — revert back to original status & paymentStatus
         await Order.findOneAndUpdate(
           { _id: order._id, paymentStatus: "refund_pending" },
           {
             $set: {
-              paymentStatus: "paid",
-              status: "confirmed",
+              paymentStatus: originalPaymentStatus,
+              status: originalStatus,
             },
             $push: {
               timeline: {
-                status: "confirmed",
-                note: `Refund failed at provider (${err.message}). Status reverted to paid.`,
+                status: originalStatus,
+                note: `Refund failed at provider (${err.message}). Status reverted to ${originalStatus}.`,
                 timestamp: new Date(),
               },
             },
@@ -502,18 +506,29 @@ class PaymentService {
       { new: true }
     );
 
-    // Restore stock
-    for (const item of order.items) {
-      if (item.product) {
-        await Product.updateOne(
-          { _id: item.product },
-          {
-            $inc: {
-              availableStock: item.quantity,
-              soldStock: -item.quantity,
-            },
-          }
-        );
+    // Restore stock ONLY for pre-dispatch orders and ONLY if this execution transitioned the order
+    const PRE_DISPATCH_STATUSES = [
+      "placed",
+      "confirmed",
+      "packing",
+      "ready",
+      "processing",
+      "assigned",
+    ];
+
+    if (refundedOrder && PRE_DISPATCH_STATUSES.includes(originalStatus)) {
+      for (const item of order.items) {
+        if (item.product) {
+          await Product.updateOne(
+            { _id: item.product },
+            {
+              $inc: {
+                availableStock: item.quantity,
+                soldStock: -item.quantity,
+              },
+            }
+          );
+        }
       }
     }
 
