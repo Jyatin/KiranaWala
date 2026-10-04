@@ -154,7 +154,7 @@ router.patch(
   }
 );
 
-// PATCH /api/delivery/orders/:id/status - Runner status transition
+// PATCH /api/delivery/orders/:id/status - Runner/Merchant status transition
 router.patch(
   "/orders/:id/status",
   authenticateToken,
@@ -163,25 +163,33 @@ router.patch(
     try {
       const { id } = req.params;
       const { status, otp } = req.body;
-      const runnerId = req.user.id || req.user.userId;
+      const userId = req.user.id || req.user.userId;
+      const userRole = req.user.role;
 
       if (!id || !mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({ success: false, message: "Invalid order ID" });
       }
 
-      const order = await Order.findById(id);
-      if (!order) {
+      // Enforce ownership strictly inside the database query
+      const orderFilter = { _id: id };
+
+      if (userRole === "store-owner") {
+        const store = await Store.findOne({ owner: userId });
+        if (!store) {
+          return res.status(404).json({ success: false, message: "Order not found" });
+        }
+        orderFilter.store = store._id;
+      } else if (userRole === "delivery-partner") {
+        orderFilter.deliveryPartner = userId;
+      } else if (userRole === "admin") {
+        // Platform admin can transition any order
+      } else {
         return res.status(404).json({ success: false, message: "Order not found" });
       }
 
-      // Check runner assignment if caller is delivery-partner
-      if (req.user.role === "delivery-partner") {
-        if (!order.deliveryPartner || order.deliveryPartner.toString() !== runnerId) {
-          return res.status(403).json({
-            success: false,
-            message: "Unauthorized: You are not assigned to this delivery",
-          });
-        }
+      const order = await Order.findOne(orderFilter);
+      if (!order) {
+        return res.status(404).json({ success: false, message: "Order not found" });
       }
 
       const currentStatus = order.status;
