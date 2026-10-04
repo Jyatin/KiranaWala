@@ -6,6 +6,7 @@ const Product = require("../models/product");
 const Order = require("../models/order");
 const DemandPrediction = require("../models/demandPrediction");
 const InventoryService = require("../services/inventoryService");
+const PaymentService = require("../services/paymentService");
 const jwt = require("jsonwebtoken");
 const {
   authenticateToken,
@@ -512,13 +513,39 @@ router.patch(
         });
       }
 
-      // If transitioning to cancelled, restore stock for products
+      // If transitioning to cancelled
       if (status === "cancelled") {
+        if (order.paymentStatus === "paid") {
+          const refundResult = await PaymentService.processRefund({
+            orderId: order._id,
+            reason: "Cancelled by store owner",
+            storeId: store._id,
+          });
+
+          const refundedOrder = await Order.findById(orderId).populate(
+            "customer",
+            "username email"
+          );
+
+          return res.json({
+            message: "Order cancelled and refund initiated successfully",
+            order: refundedOrder,
+            refund: refundResult,
+          });
+        }
+
+        // Unpaid order stock restoration
         for (const item of order.items) {
           if (item.product) {
             await Product.updateOne(
               { _id: item.product },
-              { $inc: { stock: item.quantity } },
+              {
+                $inc: {
+                  stock: item.quantity,
+                  availableStock: item.quantity,
+                  soldStock: -item.quantity,
+                },
+              }
             );
           }
         }

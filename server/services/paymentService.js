@@ -5,6 +5,10 @@ const Order = require("../models/order");
 const Product = require("../models/product");
 const InventoryService = require("./inventoryService");
 const CouponService = require("./couponService");
+const {
+  validateOrderStatusTransition,
+  validatePaymentStatusTransition,
+} = require("../utils/orderStateMachine");
 
 // =====================================================
 // PAYMENT PROVIDER ABSTRACTION
@@ -182,6 +186,12 @@ class PaymentService {
       throw new Error("Payment provider not configured for production");
     }
 
+    if (process.env.ENABLE_MOCK_PAYMENTS !== "true") {
+      throw new Error(
+        "Mock payments are disabled. Set ENABLE_MOCK_PAYMENTS=true in non-production environment to enable mock payment provider."
+      );
+    }
+
     console.warn(
       "[PaymentService] Using MockPaymentProvider — Razorpay credentials not configured. This is acceptable for local development only."
     );
@@ -203,7 +213,7 @@ class PaymentService {
       throw new Error("Order not found in database");
     }
 
-    if (order.paymentStatus === "paid" || order.paymentStatus === "captured") {
+    if (order.paymentStatus === "paid") {
       throw new Error("Order has already been paid");
     }
 
@@ -278,7 +288,7 @@ class PaymentService {
 
     // Idempotent: already confirmed/paid
     if (
-      (order.paymentStatus === "paid" || order.paymentStatus === "captured") &&
+      order.paymentStatus === "paid" &&
       [
         "confirmed",
         "packing",
@@ -296,6 +306,9 @@ class PaymentService {
     if (["payment_failed", "cancelled", "refunded", "refund_pending"].includes(order.status)) {
       throw new Error(`Order cannot be confirmed: order is in '${order.status}' state (reservation expired or cancelled)`);
     }
+
+    validateOrderStatusTransition(order.status, "confirmed");
+    validatePaymentStatusTransition(order.paymentStatus, "paid");
 
     // Verify signature (skip if already verified via webhook or a confirmed path)
     if (source === "webhook") {
@@ -363,12 +376,15 @@ class PaymentService {
   }
 
   static async _failOrder(order, razorpayPaymentId, reason) {
-    if (order.paymentStatus === "paid" || order.paymentStatus === "captured") {
+    if (order.paymentStatus === "paid") {
       return { success: false, message: "Order already paid — cannot mark as failed" };
     }
     if (order.status === "payment_failed") {
       return { success: true, alreadyFailed: true, order };
     }
+
+    validateOrderStatusTransition(order.status, "payment_failed");
+    validatePaymentStatusTransition(order.paymentStatus, "failed");
 
     order.paymentStatus = "failed";
     order.status = "payment_failed";
@@ -406,8 +422,8 @@ class PaymentService {
     // Atomically claim the order before calling provider
     const claimFilter = {
       _id: orderId,
-      paymentStatus: { $in: ["paid", "captured"] },
-      status: { $nin: ["refunded", "refund_pending", "cancelled"] },
+      paymentStatus: "paid",
+      status: { $nin: ["refunded", "refund_pending"] },
     };
     if (storeId) {
       claimFilter.store = storeId;
@@ -528,6 +544,7 @@ class PaymentService {
             { _id: item.product },
             {
               $inc: {
+                stock: item.quantity,
                 availableStock: item.quantity,
                 soldStock: -item.quantity,
               },

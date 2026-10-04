@@ -12,6 +12,7 @@ const { authenticateToken, requireCustomer } = require("../middleware/authMiddle
 const mongoose = require("mongoose");
 const InventoryService = require("../services/inventoryService");
 const CouponService = require("../services/couponService");
+const PaymentService = require("../services/paymentService");
 
 // Customer Registration
 router.post("/register", async (req, res) => {
@@ -1145,7 +1146,6 @@ router.patch("/orders/:orderId/cancel", authenticateToken, requireCustomer, asyn
       return res.status(400).json({ message: "Invalid order ID" });
     }
 
-    // Allow cancellation of placed or pending_payment orders
     const existingOrder = await Order.findOne({
       _id: orderId,
       customer: userId,
@@ -1155,50 +1155,100 @@ router.patch("/orders/:orderId/cancel", authenticateToken, requireCustomer, asyn
       return res.status(404).json({ success: false, message: "Order not found" });
     }
 
-    if (!["placed", "pending_payment"].includes(existingOrder.status)) {
+    if (!["placed", "pending_payment", "confirmed"].includes(existingOrder.status)) {
       return res.status(400).json({
         success: false,
         message: `Order cannot be cancelled in its current status: ${existingOrder.status}`,
       });
     }
 
-    const previousStatus = existingOrder.status;
-    existingOrder.status = "cancelled";
-    existingOrder.timeline = existingOrder.timeline || [];
-    existingOrder.timeline.push({
-      status: "cancelled",
-      note: "Cancelled by customer",
-      timestamp: new Date(),
-    });
-    await existingOrder.save();
+    // ── Paid order cancellation triggers automated refund workflow ──
+    if (existingOrder.paymentStatus === "paid") {
+      try {
+        const refundResult = await PaymentService.processRefund({
+          orderId: existingOrder._id,
+          reason: "Cancelled by customer",
+        });
 
-    // Smart Inventory Restoration
-    if (previousStatus === "pending_payment") {
+        const refundedOrder = await Order.findById(existingOrder._id).populate(
+          "store",
+          "name category description location"
+        );
+
+        return res.json({
+          success: true,
+          message: "Order cancelled and refund initiated successfully",
+          order: refundedOrder,
+          refund: refundResult,
+        });
+      } catch (err) {
+        return res.status(400).json({
+          success: false,
+          message: `Refund processing failed: ${err.message}`,
+        });
+      }
+    }
+
+    // ── Unpaid order cancellation ──
+    const claimedOrder = await Order.findOneAndUpdate(
+      {
+        _id: orderId,
+        customer: userId,
+        status: { $in: ["placed", "pending_payment", "confirmed"] },
+        paymentStatus: { $ne: "paid" },
+      },
+      {
+        $set: {
+          status: "cancelled",
+          paymentStatus: "failed",
+        },
+        $push: {
+          timeline: {
+            status: "cancelled",
+            note: "Cancelled by customer",
+            timestamp: new Date(),
+          },
+        },
+      },
+      { new: false }
+    );
+
+    if (!claimedOrder) {
+      return res.status(400).json({
+        success: false,
+        message: "Order cannot be cancelled (already processed or cancelled)",
+      });
+    }
+
+    // Smart Inventory Restoration for unpaid order
+    if (claimedOrder.status === "pending_payment") {
       // Order had reserved stock, release back to available
-      await InventoryService.releaseReservation(existingOrder.items);
+      await InventoryService.releaseReservation(claimedOrder.items);
     } else {
       // Order had committed stock, restore stock and availableStock
-      for (const item of existingOrder.items) {
+      for (const item of claimedOrder.items) {
         if (item.product) {
           await Product.updateOne(
             { _id: item.product },
-            { $inc: { stock: item.quantity, availableStock: item.quantity, soldStock: -item.quantity } },
+            { $inc: { stock: item.quantity, availableStock: item.quantity, soldStock: -item.quantity } }
           ).catch(() => {});
         }
       }
     }
 
-    await existingOrder.populate("store", "name category description location");
+    const updatedOrder = await Order.findById(orderId).populate(
+      "store",
+      "name category description location"
+    );
 
-    res.json({
+    return res.json({
       success: true,
       message: "Order cancelled successfully",
-      order: existingOrder,
+      order: updatedOrder,
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-
 
 module.exports = router;
