@@ -169,7 +169,7 @@ router.post("/webhook", async (req, res) => {
       const razorpayPaymentId = paymentEntity.id;
 
       const order = await Order.findOne({ razorpayOrderId });
-      if (order && order.paymentStatus !== "paid" && order.paymentStatus !== "captured") {
+      if (order && order.paymentStatus !== "paid") {
         await PaymentService.confirmPayment({
           orderId: order._id,
           razorpayOrderId,
@@ -190,7 +190,7 @@ router.post("/webhook", async (req, res) => {
         paymentEntity.error_description || "Payment failed via webhook";
 
       const order = await Order.findOne({ razorpayOrderId });
-      if (order && order.paymentStatus !== "paid" && order.paymentStatus !== "captured") {
+      if (order && order.paymentStatus !== "paid") {
         await PaymentService.handlePaymentFailure({
           orderId: order._id,
           razorpayOrderId,
