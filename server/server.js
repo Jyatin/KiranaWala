@@ -19,6 +19,7 @@ const notificationRoutes = require("./routes/notificationRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const InventoryService = require("./services/inventoryService");
 const ReconciliationService = require("./services/reconciliationService");
+const { correlationMiddleware } = require("./middleware/observabilityMiddleware");
 
 const app = express();
 
@@ -26,6 +27,7 @@ const app = express();
 // MIDDLEWARE
 // =====================================================
 
+app.use(correlationMiddleware);
 app.use(cors());
 app.use(
   express.json({
