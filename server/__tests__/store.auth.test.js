@@ -132,8 +132,8 @@ describe("Store Authentication & Authorization Tests", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  // 2. Invalid JWT -> 403
-  it("should return 403 if JWT is invalid", async () => {
+  // 2. Invalid JWT -> 401
+  it("should return 401 if JWT is invalid", async () => {
     const res = await request(app)
       .post("/api/store/products")
       .set("Authorization", "Bearer invalidtoken")
@@ -145,11 +145,11 @@ describe("Store Authentication & Authorization Tests", () => {
         storeId: storeA._id,
       });
 
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(401);
   });
 
-  // 3. Expired JWT -> 403
-  it("should return 403 if JWT is expired", async () => {
+  // 3. Expired JWT -> 401
+  it("should return 401 if JWT is expired", async () => {
     const expiredToken = jwt.sign(
       { id: storeOwnerUserA._id },
       process.env.JWT_SECRET,
@@ -166,7 +166,7 @@ describe("Store Authentication & Authorization Tests", () => {
         storeId: storeA._id,
       });
 
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(401);
   });
 
   // 4. Valid customer JWT attempting store-owner product management -> rejected
