@@ -89,7 +89,12 @@ export default function OrderTrackingPage({
   const fetchTracking = async (isManual = false) => {
     if (isManual) setRefreshing(true);
     try {
-      const res = await fetch(`/api/delivery/orders/${orderId}/track`);
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const res = await fetch(`/api/delivery/orders/${orderId}/track`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.message || "Failed to load tracking data");
@@ -97,7 +102,6 @@ export default function OrderTrackingPage({
       setTracking(data);
 
       // Also fetch order details for items summary
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
       if (token) {
         const orderRes = await fetch(`/api/customer/orders/${orderId}`, {
           headers: { Authorization: `Bearer ${token}` },
