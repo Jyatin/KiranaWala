@@ -115,6 +115,8 @@ const orderSchema = new mongoose.Schema(
     deliveryPartnerPhone: { type: String, default: "" },
     deliveryEtaMinutes: { type: Number, default: 18 },
     deliveryOtp: { type: String, default: "4291" },
+    otpAttempts: { type: Number, default: 0 },
+    otpLockedUntil: { type: Date, default: null },
     status: {
       type: String,
       enum: [

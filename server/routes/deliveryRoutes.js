@@ -7,7 +7,21 @@ const Order = require("../models/order");
 const User = require("../models/user");
 const Store = require("../models/store");
 const Delivery = require("../models/delivery");
+const crypto = require("crypto");
 const { authenticateToken, requireRole } = require("../middleware/authMiddleware");
+
+// Timing-safe OTP comparison handling length mismatches without throwing
+function verifyOtpTimingSafe(actualOtp, providedOtp) {
+  if (!actualOtp || !providedOtp) return false;
+  const actualStr = String(actualOtp).trim();
+  const providedStr = String(providedOtp).trim();
+  const actualBuf = Buffer.from(actualStr, "utf8");
+  const providedBuf = Buffer.from(providedStr, "utf8");
+  if (actualBuf.length !== providedBuf.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(actualBuf, providedBuf);
+}
 
 // Allowed delivery state progression
 const VALID_DELIVERY_TRANSITIONS = {
@@ -202,14 +216,68 @@ router.patch(
         });
       }
 
-      // If transitioning to delivered, verify delivery OTP
-      if (status === "delivered") {
-        if (order.deliveryOtp && otp && otp.toString().trim() !== order.deliveryOtp) {
+      // If transitioning to delivered, verify delivery OTP with rate limiting & constant-time check
+      if (status === "delivered" && order.deliveryOtp) {
+        // Check lockout status (15-minute cooldown after 5 failed attempts)
+        const OTP_LOCKOUT_MS = 15 * 60 * 1000; // 15-minute cooldown
+        if (order.otpLockedUntil && new Date(order.otpLockedUntil) > new Date()) {
+          return res.status(429).json({
+            success: false,
+            message: "Too many failed OTP attempts. Order verification is locked for 15 minutes.",
+          });
+        }
+        if (order.otpAttempts >= 5 && (!order.otpLockedUntil || new Date(order.otpLockedUntil) > new Date())) {
+          return res.status(429).json({
+            success: false,
+            message: "Too many failed OTP attempts. Order verification is locked for 15 minutes.",
+          });
+        }
+
+        // OTP is strictly required whenever order.deliveryOtp exists
+        if (!otp) {
+          const updated = await Order.findOneAndUpdate(
+            { _id: order._id },
+            { $inc: { otpAttempts: 1 } },
+            { new: true }
+          );
+          if (updated && updated.otpAttempts >= 5) {
+            await Order.updateOne(
+              { _id: order._id },
+              { $set: { otpLockedUntil: new Date(Date.now() + OTP_LOCKOUT_MS) } }
+            );
+          }
+          return res.status(400).json({
+            success: false,
+            message: "Delivery OTP is required to mark order as delivered",
+          });
+        }
+
+        const isValidOtp = verifyOtpTimingSafe(order.deliveryOtp, otp);
+        if (!isValidOtp) {
+          const updated = await Order.findOneAndUpdate(
+            { _id: order._id },
+            { $inc: { otpAttempts: 1 } },
+            { new: true }
+          );
+          if (updated && updated.otpAttempts >= 5) {
+            await Order.updateOne(
+              { _id: order._id },
+              { $set: { otpLockedUntil: new Date(Date.now() + OTP_LOCKOUT_MS) } }
+            );
+            return res.status(429).json({
+              success: false,
+              message: "Too many failed OTP attempts. Order verification is locked for 15 minutes.",
+            });
+          }
           return res.status(400).json({
             success: false,
             message: "Invalid Delivery OTP provided by customer",
           });
         }
+
+        // Correct OTP: reset failed attempts
+        order.otpAttempts = 0;
+        order.otpLockedUntil = null;
       }
 
       order.status = status;

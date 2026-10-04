@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
@@ -1008,8 +1009,8 @@ router.post("/orders", authenticateToken, requireCustomer, async (req, res) => {
       });
     }
 
-    // Generate 4-digit Delivery OTP
-    const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
+    // Generate cryptographically secure 4-digit Delivery OTP
+    const deliveryOtp = crypto.randomInt(1000, 10000).toString();
 
     const initialStatus = paymentMethod === "cod" ? "placed" : "pending_payment";
 
