@@ -389,18 +389,34 @@ class PaymentService {
 
   /**
    * Process full or partial refund.
+   * Enforces store ownership at query level and validates order status.
    */
   static async processRefund({
     orderId,
     amount,
     reason = "Customer requested cancellation",
+    storeId,
   }) {
-    const order = await Order.findById(orderId);
-    if (!order) throw new Error("Order not found");
+    const query = { _id: orderId };
+    if (storeId) {
+      query.store = storeId;
+    }
+
+    const order = await Order.findOne(query);
+    if (!order) {
+      throw new Error("Order not found or unauthorized");
+    }
 
     if (order.paymentStatus !== "paid" && order.paymentStatus !== "captured") {
       throw new Error(
         `Cannot refund order with payment status '${order.paymentStatus}'`
+      );
+    }
+
+    // State guard: Ensure order has not already been refunded or in invalid terminal state
+    if (order.status === "refunded" || order.status === "refund_pending" || order.status === "cancelled") {
+      throw new Error(
+        `Cannot refund order in status '${order.status}'`
       );
     }
 

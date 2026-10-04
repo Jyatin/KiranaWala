@@ -3,8 +3,10 @@
 const express = require("express");
 const router = express.Router();
 const crypto = require("crypto");
+const mongoose = require("mongoose");
 const PaymentService = require("../services/paymentService");
 const Order = require("../models/order");
+const Store = require("../models/store");
 const { authenticateToken, requireRole, requireCustomer } = require("../middleware/authMiddleware");
 
 // =====================================================
@@ -292,10 +294,27 @@ router.post(
   async (req, res) => {
     try {
       const { orderId, amount, reason } = req.body;
+      const userId = req.user.id || req.user.userId;
+      const userRole = req.user.role;
+
+      if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+        return res.status(400).json({ success: false, message: "Valid orderId is required" });
+      }
+
+      let storeIdFilter = undefined;
+      if (userRole === "store-owner") {
+        const store = await Store.findOne({ owner: userId });
+        if (!store) {
+          return res.status(404).json({ success: false, message: "Store not found or unauthorized" });
+        }
+        storeIdFilter = store._id;
+      }
+
       const result = await PaymentService.processRefund({
         orderId,
         amount,
         reason,
+        storeId: storeIdFilter,
       });
       res.json(result);
     } catch (err) {
