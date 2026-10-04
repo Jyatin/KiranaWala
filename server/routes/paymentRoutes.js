@@ -114,30 +114,50 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     const signature = req.headers["x-razorpay-signature"];
 
-    // Parse body — handle both raw buffer and already-parsed JSON
-    let body;
-    if (Buffer.isBuffer(req.body)) {
-      body = JSON.parse(req.body.toString("utf8"));
-    } else {
-      body = req.body;
+    // Fail-closed: RAZORPAY_WEBHOOK_SECRET must be configured
+    if (!webhookSecret) {
+      console.error("[Webhook] RAZORPAY_WEBHOOK_SECRET is not configured. Rejecting webhook.");
+      return res
+        .status(500)
+        .json({ success: false, message: "Webhook secret not configured on server" });
     }
 
-    // Validate webhook signature if secret is configured
-    if (webhookSecret && signature) {
-      const rawBody = Buffer.isBuffer(req.body)
-        ? req.body.toString("utf8")
-        : JSON.stringify(req.body);
-      const expectedSig = crypto
-        .createHmac("sha256", webhookSecret)
-        .update(rawBody)
-        .digest("hex");
+    // Fail-closed: x-razorpay-signature header is mandatory
+    if (!signature) {
+      console.error("[Webhook] Missing x-razorpay-signature header");
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing x-razorpay-signature header" });
+    }
 
-      if (expectedSig !== signature) {
-        console.error("[Webhook] Invalid signature");
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid webhook signature" });
-      }
+    // Parse body — handle both raw buffer and already-parsed JSON
+    let body;
+    let rawBody;
+    if (Buffer.isBuffer(req.body)) {
+      rawBody = req.body.toString("utf8");
+      body = JSON.parse(rawBody);
+    } else {
+      body = req.body;
+      rawBody = JSON.stringify(req.body);
+    }
+
+    const expectedSig = crypto
+      .createHmac("sha256", webhookSecret)
+      .update(rawBody)
+      .digest("hex");
+
+    // Timing-safe signature comparison
+    const expectedBuf = Buffer.from(expectedSig, "utf8");
+    const signatureBuf = Buffer.from(String(signature), "utf8");
+    const isSignatureValid =
+      expectedBuf.length === signatureBuf.length &&
+      crypto.timingSafeEqual(expectedBuf, signatureBuf);
+
+    if (!isSignatureValid) {
+      console.error("[Webhook] Invalid signature");
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid webhook signature" });
     }
 
     const event = body.event;
