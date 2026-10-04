@@ -392,10 +392,69 @@ Suite: `server/__tests__/payment.refund.correctness.test.js`
 
 ---
 
-## 14. Final Verification Summary
+---
+
+## 15. Vulnerability 11: Removal of Delivery OTP Default & Fail-Closed Delivery Check
+
+### What was wrong
+1. In `server/models/order.js:117`, `deliveryOtp` had a schema default of `"4291"`. Any order document created without an explicit OTP was silently assigned `"4291"`.
+2. In `server/routes/deliveryRoutes.js:220`, `if (status === "delivered" && order.deliveryOtp)` checked for `order.deliveryOtp`. If an order reached `"delivered"` with no OTP configured, the entire verification check was skipped, marking the order as delivered without OTP confirmation.
+
+### What changed
+1. Removed `default: "4291"` from `Order.deliveryOtp` in `server/models/order.js:117`.
+2. In `server/routes/deliveryRoutes.js:220`, enforced fail-closed behavior:
+   ```javascript
+   if (status === "delivered") {
+     if (!order.deliveryOtp) {
+       return res.status(400).json({
+         success: false,
+         message: "Order cannot be marked delivered without a valid delivery OTP configuration",
+       });
+     }
+   ```
+
+### Tests Added
+Suite: `server/__tests__/delivery.otp.test.js`
+- `(v) An order with no deliveryOtp configured CANNOT be marked delivered and is rejected (fail-closed)`
+
+---
+
+## 16. Vulnerability 12: Seed Guard Hostname Parsing
+
+### What was wrong
+`validateSeedEnvironment()` in `server/scripts/seedDemoData.js` used simple substring checks (`mongoUri.includes("localhost")`). Attackers or misconfigurations using spoofed URIs like `mongodb+srv://localhost.example.com/db` or `mongodb://user:localhost@db.example.com/db` could bypass the local-only check.
+
+### What changed
+1. Implemented robust host extraction parsing protocol, authentication credentials, and connection options.
+2. Extracted host list and verified that every host belongs to `ALLOWED_LOCAL_HOSTS = Set(["localhost", "127.0.0.1", "::1", "mongodb-memory-server"])`.
+
+### Tests Added
+Suite: `server/__tests__/seed.safety.test.js`
+- `6. Refuses spoofed subdomain host (mongodb+srv://localhost.example.com/db)`
+- `7. Refuses spoofed auth username (mongodb://user:localhost@db.example.com/db)`
+- `8. Allows legitimate local connection strings (mongodb://localhost:27017/db, ::1)`
+
+---
+
+## 17. Vulnerability 13: Webhook Dead Code Cleanup & Strict Raw Body Requirement
+
+### What was wrong
+`server/routes/paymentRoutes.js:133-145` contained dead fallbacks (`Buffer.isBuffer(req.body)` and `Buffer.from(...)`). If `req.rawBody` was missing (e.g. non-JSON content-type), unhandled parsing resulted in runtime exceptions caught by generic 200 error handlers.
+
+### What changed
+1. Removed dead `Buffer.isBuffer` and `express.raw` fallback code.
+2. Replaced with explicit fail-closed check: if `!req.rawBody`, immediately reject with HTTP 400 (`"Missing raw request body or unsupported content type"`).
+
+### Tests Added
+Suite: `server/__tests__/payment.webhook.rawbody.test.js`
+- `Webhook request with non-JSON content-type (or missing req.rawBody) is REJECTED with 400`
+
+---
+
+## 18. Final Verification Summary
 
 - **Total Test Suites:** **28 passed, 28 total**.
-- **Total Tests:** **244 passed, 244 total**.
+- **Total Tests:** **249 passed, 249 total**.
 - **Failing Tests:** **0 failing**.
 - **Regressions:** **0**.
 
