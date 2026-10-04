@@ -225,8 +225,177 @@ Suite: `server/__tests__/auth.registration.security.test.js`
 
 ---
 
-## 9. Final Verification Summary
+---
 
-- **Total Test Suites:** **23 passed, 23 total**.
-- **Total Tests:** **225 passed, 225 total**.
+## 9. Vulnerability 7: Webhook Raw Wire Bytes HMAC Verification
+
+### What was wrong
+In `server/routes/paymentRoutes.js:133-145`, when incoming webhook payloads were parsed by standard Express `express.json()` middleware, the route attempted to reconstruct raw bytes using `JSON.stringify(req.body)`. When incoming payloads contained formatted whitespace, unicode escapes (e.g. `\u20b9`), or escaped slashes (`\/`), JSON re-serialization altered the raw character sequence. As a result, valid HMAC-SHA256 signatures computed over the exact wire bytes were rejected.
+
+### How it was reproduced
+1. Wrote `server/__tests__/payment.webhook.rawbody.test.js`.
+2. Sent valid webhooks containing `\u20b9` and formatted whitespace signed over the wire bytes.
+3. Proved that `JSON.stringify(req.body)` generated an HMAC signature mismatch (400) against current code.
+
+### What changed
+1. In `server/server.js:28`, configured `express.json` with a `verify` callback to capture the raw wire buffer on `req.rawBody`:
+   ```javascript
+   app.use(
+     express.json({
+       verify: (req, res, buf) => {
+         req.rawBody = buf;
+       },
+     })
+   );
+   ```
+2. In `server/routes/paymentRoutes.js:133-145`, updated HMAC calculation to compute over `req.rawBody` directly while preserving parsed `req.body` for event dispatching:
+   ```javascript
+   const rawBody = req.rawBody || (Buffer.isBuffer(req.body) ? req.body : Buffer.from(typeof req.body === "string" ? req.body : JSON.stringify(req.body)));
+   const body = Buffer.isBuffer(req.body) ? JSON.parse(req.body.toString("utf8")) : req.body;
+   ```
+
+### Tests Added
+Suite: `server/__tests__/payment.webhook.rawbody.test.js`
+- `Webhook payload with whitespace, unicode escapes (\u20b9), and slashes must be verified over exact wire bytes`
+- `Webhook payload with one single character tampered must be rejected (400)`
+
+---
+
+## 10. Vulnerability 8: Delivery OTP Exposure in Runner & Merchant Order Queries
+
+### What was wrong
+Endpoints querying order lists (`GET /api/delivery/orders` for delivery runners and `GET /api/store/orders` / `GET /api/store/orders/:orderId` for store owners) returned the full `Order` document, including `deliveryOtp`. Delivery runners and merchants could view the customer's delivery OTP before physical delivery occurred, defeating the proof-of-delivery verification mechanism.
+
+### How it was reproduced
+1. Wrote `server/__tests__/delivery.otp.exposure.test.js`.
+2. Demonstrated that `GET /api/delivery/orders`, `GET /api/store/orders`, and `GET /api/store/orders/:orderId` contained `deliveryOtp` in responses.
+
+### What changed
+1. In `server/models/order.js:117`, added `select: false` to the `deliveryOtp` schema definition:
+   ```javascript
+   deliveryOtp: { type: String, default: "4291", select: false }
+   ```
+2. In `server/routes/customerRoutes.js:1101, 1120`, explicitly added `.select("+deliveryOtp")` for the authenticated owning customer's order queries (`GET /api/customer/orders` and `GET /api/customer/orders/:orderId`).
+3. In `server/routes/deliveryRoutes.js:204, 354`, explicitly added `.select("+deliveryOtp")` where OTP verification and customer tracking take place.
+4. Merchant and runner order queries omit `deliveryOtp` by default.
+
+### Tests Added
+Suite: `server/__tests__/delivery.otp.exposure.test.js`
+- `1. GET /api/delivery/orders as assigned runner must NOT expose deliveryOtp anywhere in the response`
+- `2. GET /api/store/orders as owning store owner must NOT expose deliveryOtp anywhere in the response`
+- `3. GET /api/store/orders/:orderId as owning store owner must NOT expose deliveryOtp anywhere in the response`
+- `4. GET /api/customer/orders as owning customer MUST contain deliveryOtp`
+- `5. GET /api/customer/orders/:orderId as owning customer MUST contain deliveryOtp`
+
+---
+
+## 11. Vulnerability 9: Seed Script Environment Safety Guards
+
+### What was wrong
+`server/scripts/seedDemoData.js` lacked safety checks preventing execution against production environments or remote database clusters. Accidental execution could overwrite demo credentials and catalog data in live production deployments.
+
+### What changed
+1. In `server/scripts/seedDemoData.js`, implemented `validateSeedEnvironment()`:
+   - Refuses to run when `NODE_ENV === "production"`.
+   - Refuses to run when `MONGO_URI` does not point to `localhost`, `127.0.0.1`, or `mongodb-memory-server`.
+   - Requires explicit `ALLOW_SEED_REMOTE=true` environment variable to override for intentional staging runs.
+   - Throws clear error and blocks DB connection if safety checks fail.
+
+### Tests Added
+Suite: `server/__tests__/seed.safety.test.js`
+- `1. Refuses to run when NODE_ENV is production`
+- `2. Refuses to run when MONGO_URI points to remote database`
+- `3. Allows execution when ALLOW_SEED_REMOTE=true even in production`
+- `4. Allows execution in development with localhost, 127.0.0.1, or mongodb-memory-server`
+- `5. seedData() throws when safety check fails`
+
+---
+
+## 12. Vulnerability 10: Refund State Restoration & Inventory Gating
+
+### What was wrong
+1. **Status Clobbering on Provider Error:** In `PaymentService.processRefund`, when claiming an order, `{ new: true }` was used. On definite provider error, the order status was hardcoded to `status: "confirmed"`. Orders previously in `"packing"`, `"ready"`, or `"out_for_delivery"` were clobbered to `"confirmed"`.
+2. **Post-Dispatch Stock Restoration Bug:** Successful refunds restored inventory (`availableStock += quantity`, `soldStock -= quantity`) unconditionally. When a customer was refunded for an order already picked up, out for delivery, or delivered, inventory was erroneously incremented even though physical goods had left the store.
+3. **Double Inventory Restoration:** In concurrent refund attempts, stock restoration could run multiple times if not gated on the atomic state transition.
+
+### How it was reproduced
+1. Wrote `server/__tests__/payment.refund.correctness.test.js`.
+2. Demonstrated that definite provider error changed order in `"packing"` / `"out_for_delivery"` to `"confirmed"`.
+3. Demonstrated that refunding an order in `"picked_up"`, `"out_for_delivery"`, or `"delivered"` increased stock.
+
+### What changed
+1. **Atomic Snapshot of Original State:** In `PaymentService.processRefund`, used `{ new: false }` on the atomic claim `Order.findOneAndUpdate(claimFilter, { $set: { paymentStatus: "refund_pending", status: "refund_pending" } }, { new: false })` to capture `originalStatus` and `originalPaymentStatus`.
+2. **Exact State Restoration on Definite Provider Error:**
+   ```javascript
+   $set: {
+     paymentStatus: originalPaymentStatus,
+     status: originalStatus,
+   }
+   ```
+3. **Pre-Dispatch Inventory Gating:**
+   ```javascript
+   const PRE_DISPATCH_STATUSES = [
+     "placed",
+     "confirmed",
+     "packing",
+     "ready",
+     "processing",
+     "assigned",
+   ];
+
+   if (refundedOrder && PRE_DISPATCH_STATUSES.includes(originalStatus)) {
+     for (const item of order.items) {
+       if (item.product) {
+         await Product.updateOne(
+           { _id: item.product },
+           { $inc: { availableStock: item.quantity, soldStock: -item.quantity } }
+         );
+       }
+     }
+   }
+   ```
+   Post-dispatch refunds succeed financially without corrupting physical store inventory.
+
+### Tests Added
+Suite: `server/__tests__/payment.refund.correctness.test.js`
+- `1. On a definite provider error, the order's ORIGINAL status and paymentStatus are restored (packing and out_for_delivery)`
+- `2. Successful refund on post-dispatch orders (picked_up, out_for_delivery, delivered) does NOT restore inventory`
+- `3. Successful refund on pre-dispatch order (placed/confirmed/packing/ready) DOES restore inventory exactly once even with 10 concurrent requests`
+
+---
+
+## 13. Audit of Distinct Order Status and Payment Status Values
+
+| Field | Distinct Values Used | Schema Enum | Assignment Locations / Codepaths | Overlaps & Semantic Notes |
+|---|---|---|---|---|
+| `Order.paymentStatus` | `pending` | Yes | `customerRoutes.js:1042`, schema default | Initial status for COD and uncaptured online payments |
+| `Order.paymentStatus` | `paid` | Yes | `paymentService.js:314`, `paymentRoutes.js:173`, `paymentRoutes.js:90` | Verified online payment or webhook capture |
+| `Order.paymentStatus` | `failed` | Yes | `paymentService.js:368`, `paymentRoutes.js:194` | Failed payment attempt |
+| `Order.paymentStatus` | `refund_pending` | Yes | `paymentService.js:415`, `paymentRoutes.js:211` | In-flight refund claim lock |
+| `Order.paymentStatus` | `refunded` | Yes | `paymentService.js:491`, `paymentRoutes.js:232` | Completed refund |
+| `Order.paymentStatus` | `captured` | **No** (Enum mismatch) | `paymentService.js:206, 281, 361, 404`, `paymentRoutes.js:171, 192` | Checked conditionally as synonym for `paid`, but schema stores `paid` |
+| `Order.status` | `pending_payment` | Yes | `customerRoutes.js:1043` | Awaiting Razorpay checkout completion |
+| `Order.status` | `placed` | Yes | `customerRoutes.js:1043`, schema default | Order placed by customer (pre-dispatch) |
+| `Order.status` | `confirmed` | Yes | `storeRoutes.js:489`, `paymentService.js:315` | Merchant accepted order (pre-dispatch) |
+| `Order.status` | `processing` | Yes | `order.js:136` | **Overlap**: Synonym for `confirmed`/`packing` in legacy views |
+| `Order.status` | `packing` | Yes | `storeRoutes.js:489` | Store packing grocery items (pre-dispatch) |
+| `Order.status` | `ready` | Yes | `storeRoutes.js:489` | Items packed, awaiting runner pickup (pre-dispatch) |
+| `Order.status` | `assigned` | Yes | `deliveryRoutes.js:114` | Delivery partner accepted task (pre-dispatch) |
+| `Order.status` | `picked_up` | Yes | `deliveryRoutes.js:171` | Runner collected items from store (post-dispatch) |
+| `Order.status` | `out_for_delivery`| Yes | `deliveryRoutes.js:171` | Runner en route to customer (post-dispatch) |
+| `Order.status` | `delivered` | Yes | `deliveryRoutes.js:171` | Verified delivered with customer OTP (post-dispatch) |
+| `Order.status` | `completed` | Yes | `order.js:137` | **Overlap**: Synonym for `delivered` |
+| `Order.status` | `payment_failed` | Yes | `paymentService.js:369`, `paymentRoutes.js:195` | Checkout failure |
+| `Order.status` | `cancelled` | Yes | `customerRoutes.js:1162`, `deliveryRoutes.js:171` | Cancelled before delivery |
+| `Order.status` | `refund_pending` | Yes | `paymentService.js:416`, `paymentRoutes.js:212` | In-flight refund claim lock |
+| `Order.status` | `refunded` | Yes | `paymentService.js:492`, `paymentRoutes.js:233` | Refund completed |
+
+---
+
+## 14. Final Verification Summary
+
+- **Total Test Suites:** **28 passed, 28 total**.
+- **Total Tests:** **244 passed, 244 total**.
 - **Failing Tests:** **0 failing**.
+- **Regressions:** **0**.
+
