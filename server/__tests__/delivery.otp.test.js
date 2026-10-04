@@ -171,4 +171,49 @@ describe("Delivery Completion OTP & Rate Limiting Security Tests", () => {
     const checkOrder = await Order.findById(order._id);
     expect(checkOrder.status).toBe("delivered");
   });
+
+  test("(v) An order with no deliveryOtp configured CANNOT be marked delivered and is rejected (fail-closed)", async () => {
+    // Create an order explicitly with no deliveryOtp (empty string or null)
+    const orderNoOtp = await Order.create({
+      customer: customer._id,
+      store: store._id,
+      deliveryPartner: runner._id,
+      deliveryPartnerName: runner.username,
+      items: [
+        {
+          product: new mongoose.Types.ObjectId(),
+          productNameSnapshot: "Test Item",
+          unitPrice: 100,
+          quantity: 1,
+          subtotal: 100,
+        },
+      ],
+      deliveryAddress: {
+        fullName: "Test Customer",
+        phone: "+91 99999 11111",
+        address: "123 Indiranagar",
+        city: "Bengaluru",
+        pincode: "560038",
+      },
+      subtotal: 100,
+      total: 100,
+      paymentMethod: "cod",
+      paymentStatus: "paid",
+      status: "out_for_delivery",
+      deliveryOtp: "",
+      otpAttempts: 0,
+    });
+
+    const res = await request(app)
+      .patch(`/api/delivery/orders/${orderNoOtp._id}/status`)
+      .set("Authorization", `Bearer ${tokenRunner}`)
+      .send({ status: "delivered", otp: "5829" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/otp.*configuration|missing.*otp/i);
+
+    const checkOrder = await Order.findById(orderNoOtp._id);
+    expect(checkOrder.status).toBe("out_for_delivery");
+  });
 });

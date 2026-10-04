@@ -217,7 +217,14 @@ router.patch(
       }
 
       // If transitioning to delivered, verify delivery OTP with rate limiting & constant-time check
-      if (status === "delivered" && order.deliveryOtp) {
+      if (status === "delivered") {
+        if (!order.deliveryOtp) {
+          return res.status(400).json({
+            success: false,
+            message: "Order cannot be marked delivered without a valid delivery OTP configuration",
+          });
+        }
+
         // Check lockout status (15-minute cooldown after 5 failed attempts)
         const OTP_LOCKOUT_MS = 15 * 60 * 1000; // 15-minute cooldown
         if (order.otpLockedUntil && new Date(order.otpLockedUntil) > new Date()) {
