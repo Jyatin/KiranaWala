@@ -1,7 +1,7 @@
 # Security Hotfix Notes: KiranaWala
 
 **Date:** October 4, 2026  
-**Scope:** Strict minimal hotfixes for confirmed security vulnerabilities in Order Tracking OTP Leak, Refund IDOR, Delivery Status Transition IDOR, Double-Refund Race Condition, and Auth Test Assertions.
+**Scope:** Strict minimal hotfixes for confirmed security vulnerabilities in Order Tracking OTP Leak, Refund IDOR, Delivery Status Transition IDOR, Double-Refund Race Condition, Auth Test Assertions, Delivery OTP Hardening, and Webhook Fail-Closed Enforcement.
 
 ---
 
@@ -85,12 +85,6 @@ In [server/routes/deliveryRoutes.js:157-190](file:///c:/Users/ENOVO/Downloads/Ki
    - **Delivery Partner:** Filter scoped to `{ _id: id, deliveryPartner: userId }`.
    - **Admin:** Filter scoped to `{ _id: id }`.
    - **Non-owner / Unassigned:** Returns `404 Not Found` (`"Order not found or not assigned to you"`).
-2. **Delivery Completion OTP Verification Audit (Report Only):**
-   - **Code Path:** [server/routes/deliveryRoutes.js:203-210](file:///c:/Users/ENOVO/Downloads/KiranaWala-main/KiranaWala-main/server/routes/deliveryRoutes.js#L203-L210)
-   - **Attempt Limit:** **None**. There is no attempt counter, rate limiter, or lockout per order.
-   - **Constant Time Comparison:** **No**. Comparison uses standard string inequality (`order.deliveryOtp.trim() !== otp.toString().trim()`), vulnerable to timing side-channels.
-   - **OTP Length:** **4 digits** (generated via `Math.floor(1000 + Math.random() * 9000).toString()`).
-   - **Bypass Risk:** The condition `if (order.deliveryOtp && otp && order.deliveryOtp.trim() !== otp.toString().trim())` allows skipping OTP verification entirely if `otp` is omitted in the request body unless status is strictly validated.
 
 ### Tests Added
 Suite: `server/__tests__/delivery.status.security.test.js`
@@ -160,85 +154,79 @@ Tests in `server/__tests__/store.auth.test.js` at lines ~148 and ~169 expected H
 
 ---
 
-## 6. Comprehensive Authorization & Mutation Sweep Report (Remaining 49 Routes)
+## 6. Vulnerability 5: Delivery OTP Validation Bypass & Atomic Rate Limiting
 
-| Method | Path | Auth Middleware | Ownership In Query? | Data Mutating? | Security Risk / Notes |
-|---|---|---|---|---|---|
-| `POST` | `/api/customer/register` | None (Public) | N/A (User creation) | **YES** | Low. Standard public registration endpoint with bcrypt hashing. |
-| `POST` | `/api/customer/login` | None (Public) | N/A (Authentication) | No | Low. Standard credential exchange for JWT. |
-| `GET` | `/api/customer/me` | `authenticateToken`, `requireCustomer` | `{ _id: req.user.id }` | No | Low. Clean user profile read. |
-| `GET` | `/api/customer/stores/nearby` | None (Public) | N/A (Geo query) | No | Low. Geospatial aggregation for nearby stores. |
-| `GET` | `/api/customer/stores` | None (Public) | N/A (Catalog query) | No | Low. Public directory listing. |
-| `GET` | `/api/customer/stores/:storeId` | None (Public) | N/A (Catalog query) | No | Low. Public store profile. |
-| `GET` | `/api/customer/stores/:storeId/products` | None (Public) | N/A (Catalog query) | No | Low. Public catalog read. |
-| `GET` | `/api/customer/products/search` | None (Public) | N/A (Text search) | No | Low. Full-text search on available products. |
-| `GET` | `/api/customer/products/compare` | None (Public) | N/A (Catalog read) | No | Low. Product comparison. |
-| `GET` | `/api/customer/cart` | `authenticateToken`, `requireCustomer` | `{ user: userId }` | No | Low. Scoped strictly to authenticated user's cart. |
-| `POST` | `/api/customer/cart/items` | `authenticateToken`, `requireCustomer` | `{ user: userId }` | **YES** | Low. Scoped to authenticated user's cart. |
-| `PATCH` | `/api/customer/cart/items/:productId` | `authenticateToken`, `requireCustomer` | `{ user: userId }` | **YES** | Low. Scoped to authenticated user's cart. |
-| `DELETE` | `/api/customer/cart/items/:productId` | `authenticateToken`, `requireCustomer` | `{ user: userId }` | **YES** | Low. Scoped to authenticated user's cart. |
-| `DELETE` | `/api/customer/cart` | `authenticateToken`, `requireCustomer` | `{ user: userId }` | **YES** | Low. Scoped to authenticated user's cart. |
-| `POST` | `/api/customer/cart/basket` | `authenticateToken`, `requireCustomer` | `{ user: userId }` | **YES** | Low. Batch adds basket to user's cart. |
-| `GET` | `/api/customer/cart/smart-optimization` | `authenticateToken`, `requireCustomer` | `{ user: userId }` | No | Low. Cart threshold tips. |
-| `POST` | `/api/customer/orders` | `authenticateToken`, `requireCustomer` | `{ user: userId }` | **YES** | Low. Creates order with atomic inventory reservation. |
-| `GET` | `/api/customer/orders` | `authenticateToken`, `requireCustomer` | `{ customer: userId }` | No | Low. Scoped to customer's own orders. |
-| `GET` | `/api/customer/orders/:orderId` | `authenticateToken`, `requireCustomer` | `{ _id: orderId, customer: userId }` | No | Low. Scoped to customer's own order. |
-| `PATCH` | `/api/customer/orders/:orderId/cancel` | `authenticateToken`, `requireCustomer` | `{ _id: orderId, customer: userId }` | **YES** | Low. Scoped cancellation with inventory restoration. |
-| `POST` | `/api/customer/ai/chat` | None (In-memory rate limit) | N/A (AI inference) | No | **Medium**. Unauthenticated AI chat allows quota depletion if rate limiter is bypassed; rate limit is in-memory IP based. |
-| `POST` | `/api/store/register` | None (Public) | N/A (Store creation) | **YES** | Low. Creates store owner and store record. |
-| `POST` | `/api/store/login` | None (Public) | N/A (Authentication) | No | Low. Store owner credential exchange for JWT. |
-| `POST` | `/api/store/products` | `authenticateToken`, `requireStoreOwner` | `{ owner: userId }` on store | **YES** | Low. Enforces owner matching store. |
-| `GET` | `/api/store/products/:storeId` | None (Public) | N/A (Public catalog) | No | Low. Public catalog read. |
-| `PUT` | `/api/store/products/:productId` | `authenticateToken`, `requireStoreOwner` | `{ _id: productId, store: userStore._id }` | **YES** | Low. Verified store ownership. |
-| `DELETE` | `/api/store/products/:productId/:storeId` | `authenticateToken`, `requireStoreOwner` | `{ _id: productId, store: userStore._id }` | **YES** | Low. Verified store ownership. |
-| `GET` | `/api/store/all` | None (Public) | N/A (Directory) | No | Low. Public directory. |
-| `GET` | `/api/store/:storeId/products` | None (Public) | N/A (Catalog) | No | Low. Public catalog. |
-| `GET` | `/api/store/orders` | `authenticateToken`, `requireStoreOwner` | `{ store: userStore._id }` | No | Low. Scoped to store owner's store. |
-| `GET` | `/api/store/orders/:orderId` | `authenticateToken`, `requireStoreOwner` | `{ _id: orderId, store: userStore._id }` | No | Low. Scoped to store owner's store. |
-| `PATCH` | `/api/store/orders/:orderId/status` | `authenticateToken`, `requireStoreOwner` | `{ _id: orderId, store: userStore._id }` | **YES** | Low. Scoped order fulfillment transition. |
-| `GET` | `/api/store/analytics` | `authenticateToken`, `requireStoreOwner` | `{ store: userStore._id }` | No | Low. Scoped revenue and sales analytics. |
-| `GET` | `/api/store/intelligence/demand-forecast` | `authenticateToken`, `requireStoreOwner` | `{ store: userStore._id }` | No | Low. Scoped demand predictions. |
-| `POST` | `/api/store/intelligence/ai-manager` | `authenticateToken`, `requireStoreOwner` | `{ store: userStore._id }` | No | Low. Scoped AI merchant advisor. |
-| `PATCH` | `/api/store/inventory/update` | `authenticateToken`, `requireStoreOwner` | `{ _id: productId, store: userStore._id }` | **YES** | Low. Scoped bulk inventory adjust. |
-| `GET` | `/api/store/catalog` | `authenticateToken`, `requireStoreOwner` | `{ store: userStore._id }` | No | Low. Scoped merchant product catalog. |
-| `PATCH` | `/api/store/store/status` | `authenticateToken`, `requireStoreOwner` | `{ owner: userId }` | **YES** | Low. Store open/close toggle. |
-| `GET` | `/api/store/me` | `authenticateToken`, `requireStoreOwner` | `{ owner: userId }` | No | Low. Store profile read. |
-| `GET` | `/api/coupons` | None (Public) | N/A (Public list) | No | Low. Returns active coupons. |
-| `POST` | `/api/coupons/validate` | None (Public) | Validates rules against input | No | Low. Calculation endpoint, does not mutate DB. |
-| `POST` | `/api/coupons/create` | `authenticateToken`, `requireRole("store-owner", "admin")` | `{ store: userStore._id }` | **YES** | Low. Creates store-scoped discount coupons. |
-| `POST` | `/api/payments/create-order` | `authenticateToken`, `requireCustomer` | `{ customer: userId }` | **YES** | Low. Initiates Razorpay payment order. |
-| `POST` | `/api/payments/verify` | `authenticateToken` | Verifies signature & updates order | **YES** | Low. Validates signature and commits order state. |
-| `POST` | `/api/payments/webhook` | Webhook signature check | Matches `razorpayPaymentId` | **YES** | **Medium (Fixed)**. Previously pre-empted by global body parser; requires valid HMAC signature when secret configured. |
-| `POST` | `/api/payments/failure` | `authenticateToken` | `{ _id: orderId, customer: userId }` | **YES** | Low. Records failure and releases inventory. |
-| `POST` | `/api/payments/refund` | `authenticateToken`, `requireRole("admin", "store-owner")` | `{ _id: orderId, store: userStore._id }` | **YES** | Low (Fixed). Query-level ownership and atomic claim lock. |
-| `GET` | `/api/delivery/orders` | `authenticateToken`, `requireRole("delivery-partner", "admin")` | `{ deliveryPartner: userId }` | No | Low. Delivery runner order list. |
-| `GET` | `/api/delivery/available` | `authenticateToken`, `requireRole("delivery-partner", "admin")` | Status `ready` / `confirmed` | No | Low. Available orders pool for delivery runners. |
-| `PATCH` | `/api/delivery/orders/:id/claim` | `authenticateToken`, `requireRole("delivery-partner", "admin")` | Atomic claim `{ _id: id, deliveryPartner: null }` | **YES** | Low. Assigns runner to unassigned order. |
-| `PATCH` | `/api/delivery/orders/:id/status` | `authenticateToken`, `requireRole("delivery-partner", "admin", "store-owner")` | `{ _id: id, store/deliveryPartner }` | **YES** | Low (Fixed). Scoped status transition with 404 for non-owners. |
-| `GET` | `/api/delivery/orders/:id/track` | `authenticateToken` | `{ _id: id, customer/store/partner }` | No | Low (Fixed). Scoped with role-based OTP sanitization. |
-| `GET` | `/api/delivery/earnings` | `authenticateToken`, `requireRole("delivery-partner")` | `{ deliveryPartner: userId }` | No | Low. Runner earnings summary. |
-| `POST` | `/api/reviews` | `authenticateToken` | `{ customer: userId }` on order | **YES** | Low. Verifies customer purchased product before posting review. |
-| `GET` | `/api/reviews/product/:productId` | None (Public) | N/A (Product reviews) | No | Low. Public review list. |
-| `GET` | `/api/reviews/store/:storeId` | None (Public) | N/A (Store reviews) | No | Low. Public store review list. |
-| `GET` | `/api/notifications` | `authenticateToken` | `{ recipient: userId }` | No | Low. Scoped user notifications. |
-| `PATCH` | `/api/notifications/:id/read` | `authenticateToken` | `{ _id: id, recipient: userId }` | **YES** | Low. Marks user notification as read. |
-| `POST` | `/api/notifications/mark-all-read` | `authenticateToken` | `{ recipient: userId }` | **YES** | Low. Bulk marks notifications as read. |
-| `GET` | `/api/subscriptions` | `authenticateToken` | `{ customer: userId }` | No | Low. Scoped customer recurring grocery subscriptions. |
-| `POST` | `/api/subscriptions` | `authenticateToken` | `{ customer: userId }` | **YES** | Low. Creates customer subscription. |
-| `PATCH` | `/api/subscriptions/:id/status` | `authenticateToken` | `{ _id: id, customer: userId }` | **YES** | Low. Pauses/resumes customer subscription. |
-| `GET` | `/health` | None (Public) | N/A | No | Low. Basic uptime check. |
-| `GET` | `/health/db` | None (Public) | N/A | No | Low. Database connection state check. |
+### What was wrong
+1. In `server/routes/deliveryRoutes.js:206-213`, `if (order.deliveryOtp && otp && order.deliveryOtp.trim() !== otp.toString().trim())` allowed skipping OTP verification entirely if `otp` was omitted in the request body.
+2. OTP comparison used string inequality `!==` instead of constant-time comparison.
+3. There was no attempt counter or rate limiting against brute-forcing 4-digit OTPs (1,000 to 9,999 combinations).
+4. `customerRoutes.js:1012` used `Math.floor(1000 + Math.random() * 9000).toString()` (predictable PRNG).
 
-### Summary of Unauthenticated Data-Mutating Routes:
-- `POST /api/customer/register` (Customer account creation - expected public).
-- `POST /api/store/register` (Store owner and merchant creation - expected public).
-- `POST /api/payments/webhook` (Razorpay server-to-server webhook - authenticated via cryptographic HMAC-SHA256 signature).
-- **All other data-mutating routes (46 routes) enforce mandatory JWT authentication.**
+### How it was reproduced
+1. Wrote `server/__tests__/delivery.otp.test.js`.
+2. Proved marking order delivered without `otp` succeeded (200).
+3. Proved making >5 wrong OTP guesses was not rate-limited.
+
+### What changed
+1. **Mandatory OTP Requirement:** When `order.deliveryOtp` exists, `otp` is strictly required to mark status as `delivered`.
+2. **Cryptographic OTP Generation:** Updated `customerRoutes.js:1013` to generate OTPs using `crypto.randomInt(1000, 10000).toString()`.
+3. **Constant-Time Comparison:** Implemented `verifyOtpTimingSafe` using `crypto.timingSafeEqual` with length mismatch handling.
+4. **Atomic Attempt Tracking & Lockout:** Added `otpAttempts` and `otpLockedUntil` fields to `orderSchema`. Atomically increments `otpAttempts` using `$inc` in `Order.findOneAndUpdate`. Upon 5 failed attempts, sets a 15-minute lockout (`otpLockedUntil`), rejecting subsequent verification attempts with HTTP 429.
+
+### Tests Added
+Suite: `server/__tests__/delivery.otp.test.js`
+- `(i) Marking order delivered WITHOUT otp field must be rejected (400) when order has deliveryOtp`
+- `(ii) Marking order delivered with WRONG OTP must be rejected (400)`
+- `(iii) After 5 wrong OTP attempts on the same order, further attempts are rejected with 429 even with the correct OTP`
+- `(iv) Marking order delivered with CORRECT OTP succeeds (200)`
 
 ---
 
-## 7. Final Verification Summary
+## 7. Vulnerability 6: Razorpay Webhook Fail-Closed Security
 
-- **Total Test Suites:** 21 passed, 21 total.
-- **Total Tests:** 216 passed, 216 total.
+### What was wrong
+In `server/routes/paymentRoutes.js:126-141`, `if (webhookSecret && signature)` meant:
+1. If `RAZORPAY_WEBHOOK_SECRET` was unconfigured in environment, signature verification was skipped entirely and unsigned spoofed webhooks were processed (**FAIL-OPEN**).
+2. If `x-razorpay-signature` header was missing, signature verification was skipped entirely (**FAIL-OPEN**).
+3. Signature comparison used `expectedSig !== signature` (not timing-safe).
+
+### How it was reproduced
+1. Wrote `server/__tests__/payment.webhook.security.test.js`.
+2. Proved webhook without `x-razorpay-signature` returned HTTP 200 and marked order as paid.
+3. Proved webhook with unset secret returned HTTP 200 and marked order as paid.
+
+### What changed
+1. **Fail-Closed Secret Check:** If `RAZORPAY_WEBHOOK_SECRET` is unset, rejects with HTTP 500 (`"Webhook secret not configured on server"`).
+2. **Mandatory Signature Header:** If `x-razorpay-signature` is missing, rejects with HTTP 400 (`"Missing x-razorpay-signature header"`).
+3. **Timing-Safe Verification:** Compares HMAC-SHA256 signature using `crypto.timingSafeEqual`.
+
+### Tests Added
+Suite: `server/__tests__/payment.webhook.security.test.js`
+- `1. Missing x-razorpay-signature header is REJECTED (400 or 401)`
+- `2. Invalid/wrong x-razorpay-signature header is REJECTED (400 or 401)`
+- `3. When RAZORPAY_WEBHOOK_SECRET is UNSET in env, reject EVERYTHING (Fail-Closed, never accept unsigned events)`
+- `4. Valid HMAC-SHA256 signature over the payload is ACCEPTED and processes the event`
+
+---
+
+## 8. Role Escalation Security Audit & Tests
+
+### Architecture Findings
+- Public registration endpoints (`POST /api/customer/register` and `POST /api/store/register`) hardcode user roles (`role: "customer"` and `role: "store-owner"`).
+- `admin` and `delivery-partner` accounts are created exclusively via backend administrative seed scripts (`server/scripts/seedDemoData.js:513-538`) or direct DB access.
+
+### Tests Added
+Suite: `server/__tests__/auth.registration.security.test.js`
+- `POST /api/customer/register — role='admin' -> created role is 'customer'`
+- `POST /api/customer/register — role='delivery-partner' -> created role is 'customer'`
+- `POST /api/customer/register — role='store-owner' -> created role is 'customer'`
+- `POST /api/store/register — role='admin' -> created role is 'store-owner'`
+- `POST /api/store/register — role='delivery-partner' -> created role is 'store-owner'`
+
+---
+
+## 9. Final Verification Summary
+
+- **Total Test Suites:** **23 passed, 23 total**.
+- **Total Tests:** **225 passed, 225 total**.
 - **Failing Tests:** **0 failing**.
