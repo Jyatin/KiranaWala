@@ -137,4 +137,21 @@ describe("Webhook Exact Raw Body HMAC Verification", () => {
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
   });
+
+  test("Webhook request with non-JSON content-type (or missing req.rawBody) is REJECTED with 400", async () => {
+    const rawPayload = `{"event":"payment.captured"}`;
+    const validSig = crypto
+      .createHmac("sha256", WEBHOOK_SECRET)
+      .update(rawPayload)
+      .digest("hex");
+
+    const res = await request(app)
+      .post("/api/payments/webhook")
+      .set("x-razorpay-signature", validSig)
+      .set("Content-Type", "text/plain")
+      .send(rawPayload);
+
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+  });
 });

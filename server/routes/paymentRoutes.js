@@ -130,15 +130,16 @@ router.post("/webhook", async (req, res) => {
         .json({ success: false, message: "Missing x-razorpay-signature header" });
     }
 
-    // Get raw wire bytes and parsed JSON body
-    const rawBody =
-      req.rawBody ||
-      (Buffer.isBuffer(req.body)
-        ? req.body
-        : Buffer.from(typeof req.body === "string" ? req.body : JSON.stringify(req.body)));
-    const body = Buffer.isBuffer(req.body)
-      ? JSON.parse(req.body.toString("utf8"))
-      : req.body;
+    // Fail-closed: req.rawBody must be present (captured via express.json verify callback)
+    if (!req.rawBody) {
+      console.error("[Webhook] Missing raw request body or unsupported content type");
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing raw request body or unsupported content type" });
+    }
+
+    const rawBody = req.rawBody;
+    const body = req.body || {};
 
     const expectedSig = crypto
       .createHmac("sha256", webhookSecret)
