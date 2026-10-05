@@ -11,6 +11,12 @@ require("dotenv").config({
 const customerRoutes = require("./routes/customerRoutes");
 const storeRoutes = require("./routes/storeRoutes");
 const aiRoutes = require("./routes/aiRoutes");
+const couponRoutes = require("./routes/couponRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
+const deliveryRoutes = require("./routes/deliveryRoutes");
+const reviewRoutes = require("./routes/reviewRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
+const subscriptionRoutes = require("./routes/subscriptionRoutes");
 
 const app = express();
 
@@ -31,7 +37,29 @@ app.use(express.static(path.join(__dirname, "../views")));
 // MONGODB CONNECTION
 // =====================================================
 
+const seedProductionCatalog = async () => {
+  if (process.env.NODE_ENV !== "production" || !process.env.MONGO_URI) {
+    return;
+  }
+
+  try {
+    const { seedData } = require("./scripts/seedDemoData");
+    console.log("Production MongoDB connected — verifying demo catalog...");
+    await seedData({ closeConnection: false });
+    console.log("Production catalog verification complete.");
+  } catch (err) {
+    // Do not prevent the API from starting if catalog seeding fails.
+    console.error("Production catalog seeding failed:", err.message);
+  }
+};
+
 const connectMongo = async () => {
+  // If already connected (e.g., from devServerWithMemoryDb.js), skip reconnection
+  if (mongoose.connection.readyState === 1) {
+    console.log("Mongoose already connected — skipping reconnection.");
+    return;
+  }
+
   const primaryUri = process.env.MONGO_URI;
   const isProduction = process.env.NODE_ENV === "production";
   const localUri = "mongodb://127.0.0.1:27017/kiranawala";
@@ -50,6 +78,7 @@ const connectMongo = async () => {
         serverSelectionTimeoutMS: isProduction ? 8000 : 3000,
       });
       console.log("Connected to MongoDB successfully");
+      await seedProductionCatalog();
       return;
     } catch (err) {
       console.error("Primary MongoDB connection failed:", err.message);
@@ -101,6 +130,12 @@ app.use("/api/customer", customerRoutes);
 app.use("/api/customer/ai", aiRoutes);
 app.use("/api/store", storeRoutes);
 app.use("/api/store-owner", storeRoutes);
+app.use("/api/coupons", couponRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/delivery", deliveryRoutes);
+app.use("/api/reviews", reviewRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
 
 // =====================================================
 // PAGE ROUTES

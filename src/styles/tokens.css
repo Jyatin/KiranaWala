@@ -1,0 +1,94 @@
+@layer base {
+  :root {
+    /* ─── Klarna Official Core Color Palette (Live Extracted) ─── */
+    --color-bg-page: #FFFFFF;
+    --color-bg-plain: #FFFFFF;
+    --color-bg-container: #F8F7FA;
+    --color-bg-subtle: #F3F3F5;
+    --color-bg-neutral: #E2E2E7;
+    --color-bg-inverse: #0B051D;
+    --color-bg-inverse-hover: #2C2242;
+    --color-bg-elevated: #1D192A;
+
+    /* Klarna Signature Brand Pink */
+    --color-brand-pink: #FFA8CD;
+    --color-brand-pink-wash: #FFD0E2;
+    --color-brand-pink-hover: #FFB8D7;
+
+    /* Text System */
+    --color-text-default: #0B051D;
+    --color-text-body: #282636;
+    --color-text-subtle: #504F5F;
+    --color-text-muted: #615F6D;
+    --color-text-disabled: #96959F;
+    --color-text-inverse: #F9F8F5;
+    --color-text-accent: #7039E2;
+
+    /* Hairlines & Chrome */
+    --color-border-default: #E2E2E7;
+    --color-border-neutral: #C4C3CA;
+    --color-border-active: #0B051D;
+    --color-focus: #7B57D8;
+
+    /* Functional Accents */
+    --color-badge-pop: #CFF066;
+    --color-positive: #046234;
+    --color-positive-bg: #C1F4D1;
+
+    /* ─── Typography System ─── */
+    --font-display: var(--font-inter-tight), "Inter Tight", "Arial Rounded MT Bold", "Work Sans", var(--font-jakarta), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-body: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+    --text-display-hero: clamp(2.75rem, 6.5vw, 5.25rem);
+    --text-heading-xl: clamp(2.25rem, 4.5vw, 3.75rem);
+    --text-heading-lg: clamp(1.75rem, 3vw, 2.5rem);
+    --text-heading-md: clamp(1.35rem, 2vw, 1.85rem);
+    --text-body-lead: clamp(1rem, 1.25vw, 1.15rem);
+    --text-body: 1rem;
+    --text-sm: 0.875rem;
+    --text-xs: 0.75rem;
+
+    --leading-display: 0.94;
+    --leading-tight: 0.96;
+    --leading-snug: 1.15;
+    --leading-normal: 1.5;
+    --leading-relaxed: 1.65;
+
+    --tracking-display: -0.035em;
+    --tracking-heading: -0.03em;
+    --tracking-tight: -0.015em;
+    --tracking-normal: 0em;
+
+    /* ─── Geometry (House Radii) ─── */
+    --radius-xs: 4px;
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 24px;
+    --radius-xxl: 36px;
+    --radius-pill: 99999px;
+
+    /* Semantic Surface Radii */
+    --radius-badge: 8px;
+    --radius-button: 9999px;
+    --radius-card: 22px;
+    --radius-modal: 32px;
+
+    /* ─── Elevation System ─── */
+    --shadow-subtle: 0 2px 8px -2px rgba(11, 5, 29, 0.05);
+    --shadow-card: 0 8px 24px -4px rgba(11, 5, 29, 0.06);
+    --shadow-card-hover: 0 16px 36px -6px rgba(11, 5, 29, 0.1);
+    --shadow-floating: 0 20px 48px -8px rgba(11, 5, 29, 0.14);
+
+    /* ─── Container & Spacing Rhythm ─── */
+    --container-max-width: 1340px;
+    --container-padding: clamp(16px, 3.5vw, 40px);
+    --section-gap: clamp(64px, 8vw, 96px);
+
+    /* ─── Transitions ─── */
+    --duration-fast: 150ms;
+    --duration-normal: 200ms;
+    --duration-slow: 350ms;
+    --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}

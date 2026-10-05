@@ -79,17 +79,77 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    discount: {
+      type: Number,
+      default: 0,
+    },
+    couponCode: {
+      type: String,
+      default: "",
+    },
     total: {
       type: Number,
       required: true,
     },
+    paymentMethod: {
+      type: String,
+      enum: ["razorpay", "upi", "cod", "cards"],
+      default: "cod",
+    },
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "paid", "failed", "refunded"],
+      default: "pending",
+    },
+    razorpayOrderId: { type: String, default: "" },
+    razorpayPaymentId: { type: String, default: "" },
+    razorpaySignature: { type: String, default: "" },
+    signatureVerified: { type: Boolean, default: false },
+    webhookVerified: { type: Boolean, default: false },
+    deliveryPartner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    deliveryPartnerName: { type: String, default: "" },
+    deliveryPartnerPhone: { type: String, default: "" },
+    deliveryEtaMinutes: { type: Number, default: 18 },
+    deliveryOtp: { type: String, default: "4291" },
     status: {
       type: String,
-      enum: ["placed", "processing", "completed", "cancelled"],
+      enum: [
+        "placed",
+        "confirmed",
+        "packing",
+        "ready",
+        "assigned",
+        "picked_up",
+        "out_for_delivery",
+        "delivered",
+        "pending_payment",
+        "payment_failed",
+        "cancelled",
+        "refund_pending",
+        "refunded",
+        "processing",
+        "completed",
+      ],
       default: "placed",
+      index: true,
     },
+    timeline: [
+      {
+        status: { type: String, required: true },
+        timestamp: { type: Date, default: Date.now },
+        note: { type: String, default: "" },
+      },
+    ],
   },
   { timestamps: true },
 );
+
+orderSchema.index({ customer: 1, createdAt: -1 });
+orderSchema.index({ store: 1, status: 1 });
+orderSchema.index({ deliveryPartner: 1, status: 1 });
 
 module.exports = mongoose.model("Order", orderSchema);

@@ -200,6 +200,7 @@ describe("Customer Order / Checkout API", () => {
 
     // Reduce stock in DB behind the scenes
     product2.stock = 3;
+    product2.availableStock = 3;
     await product2.save();
 
     const res = await request(app)
@@ -287,7 +288,7 @@ describe("Customer Order / Checkout API", () => {
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.order.total).toBe(260);
+    expect(res.body.order.total).toBe(290); // 260 + 30 delivery fee
   });
 
   test("24. Successful order creation creates Order record in DB", async () => {
@@ -300,6 +301,7 @@ describe("Customer Order / Checkout API", () => {
       .post("/api/customer/orders")
       .set("Authorization", `Bearer ${token1}`)
       .send({
+        paymentMethod: "cod",
         deliveryAddress: {
           fullName: "Anita Roy",
           phone: "9123456789",
@@ -372,6 +374,7 @@ describe("Customer Order / Checkout API", () => {
       .post("/api/customer/orders")
       .set("Authorization", `Bearer ${token1}`)
       .send({
+        paymentMethod: "cod",
         deliveryAddress: {
           fullName: "Anita Roy",
           phone: "9123456789",
@@ -411,7 +414,7 @@ describe("Customer Order / Checkout API", () => {
     await request(app)
       .post("/api/customer/cart/items")
       .set("Authorization", `Bearer ${token1}`)
-      .send({ productId: product2._id, quantity: 2 }); // 56 * 2 = 112
+      .send({ productId: product2._id, quantity: 2 }); // 56 * 2 = 112 (+ 30 delivery fee = 142)
 
     const res = await request(app)
       .post("/api/customer/orders")
@@ -426,7 +429,7 @@ describe("Customer Order / Checkout API", () => {
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.order.total).toBe(112);
+    expect(res.body.order.total).toBe(142);
   });
 
   test("30. Prevent malicious client-provided price", async () => {

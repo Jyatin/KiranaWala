@@ -1,0 +1,108 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+
+/* ─── Global Reset & Klarna Identity Base ─── */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    background-color: var(--color-bg-page);
+    color: var(--color-text-default);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-height: 100vh;
+    overflow-x: hidden;
+    background-color: var(--color-bg-page);
+    color: var(--color-text-default);
+    font-size: var(--text-body);
+    line-height: var(--leading-normal);
+  }
+
+  /* ─── Klarna Signature Focus Ring (Purple + Ink) ─── */
+  :focus-visible {
+    outline: 2px solid var(--color-bg-inverse);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 3px var(--color-focus);
+    border-radius: var(--radius-sm);
+  }
+
+  /* ─── Klarna Pink Selection ─── */
+  ::selection {
+    background-color: var(--color-brand-pink);
+    color: var(--color-bg-inverse);
+  }
+
+  /* ─── Headings ─── */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    color: var(--color-text-default);
+    font-weight: 700;
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-heading);
+  }
+
+  /* ─── Tabular Numbers ─── */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ─── Layout Utility Classes ─── */
+.kw-container {
+  width: 100%;
+  max-width: var(--container-max-width);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: var(--container-padding);
+  padding-right: var(--container-padding);
+}
+
+.font-editorial {
+  font-family: var(--font-serif), "Newsreader", Georgia, "Times New Roman", serif;
+}
+
+/* ─── Klarna-Inspired Bold Display Treatment ─── */
+.klarna-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: var(--leading-display, 0.94);
+  letter-spacing: var(--tracking-display, -0.035em);
+  text-transform: none;
+}
+
+.klarna-display-hero {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(2.35rem, 5.5vw, 4.5rem);
+  line-height: var(--leading-display, 0.94);
+  letter-spacing: var(--tracking-display, -0.035em);
+  text-transform: none;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg-page);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-neutral);
+  border-radius: var(--radius-pill);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-subtle);
+}

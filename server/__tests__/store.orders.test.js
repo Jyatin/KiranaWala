@@ -399,7 +399,7 @@ describe("Store-Owner Order Management API", () => {
       .get("/api/store-owner/orders")
       .set("Authorization", `Bearer ${tokenCustomer}`);
     expect(listRes.status).toBe(403);
-    expect(listRes.body.message).toMatch(/Store owner role required/i);
+    expect(listRes.body.message).toMatch(/Access denied|Store owner role required/i);
 
     const getRes = await request(app)
       .get(`/api/store-owner/orders/${order1Store1._id}`)

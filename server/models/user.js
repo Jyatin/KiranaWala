@@ -7,9 +7,13 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   role: {
     type: String,
-    enum: ["customer", "store-owner", "admin"],
+    enum: ["customer", "store-owner", "delivery-partner", "admin"],
     required: true,
   },
+  phone: { type: String, trim: true },
+  address: { type: String, trim: true },
+  city: { type: String, trim: true, default: "Bengaluru" },
+  isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
 });
 
