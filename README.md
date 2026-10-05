@@ -399,9 +399,38 @@ npm install
 Create local environment variables for the database, JWT authentication, Razorpay test credentials, and other application configuration required by the project.
 
 **Never commit real secrets or production credentials.**
+ fix/add-nodemon-dev-script
+Production mode:
 
-### Run
+```bash
+node server/server.js
+```
 
+Development mode (with auto-reload):
+
+```bash
+# From project root:
+npm run dev
+
+# Or directly from the server directory:
+cd server
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+---
+
+## 🐳 Run with Docker
+
+KiranaWala includes Docker configuration for containerized development.
+Or with Docker:
+=======
+##ma
 ```bash
 npm run dev
 ```
