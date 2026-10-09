@@ -45,6 +45,7 @@ router.post("/register", async (req, res) => {
     }
 
     let locationData = undefined;
+
     if (latitude !== undefined || longitude !== undefined) {
       if (latitude === undefined || longitude === undefined) {
         return res.status(400).json({
@@ -52,8 +53,10 @@ router.post("/register", async (req, res) => {
             "Both latitude and longitude are required if providing location",
         });
       }
+
       const lat = parseFloat(latitude);
       const lng = parseFloat(longitude);
+
       if (
         isNaN(lat) ||
         isNaN(lng) ||
@@ -66,36 +69,59 @@ router.post("/register", async (req, res) => {
           .status(400)
           .json({ message: "Invalid geographic coordinates" });
       }
+
       locationData = {
         type: "Point",
         coordinates: [lng, lat],
       };
     }
 
-    // Create the store-owner user. Password hashing is handled by the
-    // User model's pre-save hook.
-    const user = new User({
-      username,
-      email,
-      password,
-      role: "store-owner",
-    });
-    await user.save();
+    // Create User and Store atomically.
+    // If either operation fails, MongoDB rolls back both operations.
+    const session = await mongoose.startSession();
 
-    // Create the store document owned by this user.
-    const store = new Store({
-      name: storeName,
-      description: storeDescription,
-      category: storeCategory,
-      owner: user._id,
-      ...(locationData && { location: locationData }),
-    });
-    await store.save();
+    try {
+      await session.withTransaction(async () => {
+        // Create the store-owner user.
+        // Password hashing is handled by the User model's pre-save hook.
+        const user = new User({
+          username,
+          email,
+          password,
+          role: "store-owner",
+        });
+
+        await user.save({ session });
+
+        // Create the store document owned by this user.
+        const store = new Store({
+          name: storeName,
+          description: storeDescription,
+          category: storeCategory,
+          owner: user._id,
+          ...(locationData && { location: locationData }),
+        });
+
+        await store.save({ session });
+      });
+    } finally {
+      await session.endSession();
+    }
 
     res.status(201).json({ message: "Registration successful" });
   } catch (error) {
     console.error("Registration error:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+
+    if (error.code === 11000) {
+      return res
+        .status(400)
+        .json({ message: "Email or username already registered" });
+    }
+
+    res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
   }
 });
 
