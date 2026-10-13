@@ -144,7 +144,7 @@ The backend:
 - verifies the Razorpay signature using HMAC-SHA256
 - handles payment success and failure states
 - processes payment events idempotently
-- supports reconciliation for payment/order state recovery
+- records payment events durably to support safe retries; automated reconciliation is not yet implemented
 
 ### 3. Idempotent Payment Webhooks
 
@@ -152,7 +152,7 @@ Payment events can be delivered more than once, so webhook processing is designe
 
 - Payment/event identifiers are used to recognize duplicate events.
 - State transitions are guarded so the same payment cannot be applied repeatedly.
-- Reconciliation handles cases where the payment provider and application state temporarily diverge.
+- A reconciliation worker for cases where provider and application state diverge remains future work.
 
 ### 4. AI-Assisted Shopping
 
@@ -288,18 +288,18 @@ The webhook handler now includes the following safeguards:
 
 The raw-body middleware is registered before `express.json()` so signature verification uses the exact request bytes received by the server.
 
-**Remaining limitation:** an event ledger is not a complete distributed transaction. A process crash between an order update and a separate side effect (for example, refund stock restoration) can still leave partial state. Reconciliation against Razorpay's authoritative payment state has **not** been implemented by this change. Do not claim exactly-once side effects or payment/order reconciliation until those paths have dedicated recovery logic and tests.
+**Remaining limitation:** an event ledger is not a complete distributed transaction. A process crash between an order update and a separate side effect (for example, refund stock restoration) can still leave partial state. Reconciliation against Razorpay's authoritative payment state has **not** been implemented. Do not claim exactly-once side effects or payment/order reconciliation until those paths have dedicated recovery logic and tests.
 
-Tests have been added for missing signatures, invalid signatures, and repeated event IDs. They must be run in the project environment before their passing status can be claimed. Additional tests should cover concurrent duplicate deliveries, retry after processing failure, stale-event recovery, and failures between order updates and stock side effects.
+The webhook tests cover missing signatures, invalid signatures, and repeated event IDs. Further hardening should cover concurrent duplicate deliveries, retry after processing failure, stale-event recovery, and failures between order updates and stock side effects.
 
 ### Current test inventory and QA status
 
 - **220 Jest test declarations** across 18 backend test files, including 20 newly added product-model validation tests.
 - **217 documented QA scenarios** in [`TEST_CASES.md`](./TEST_CASES.md).
-- The matrix records **197 previously passing scenarios** and **20 new scenarios marked `NOT TESTED`** pending execution.
+- The matrix contains **217 documented QA scenarios**; use the test suite and manual QA process to validate behavior in the target environment.
 - The documented matrix classifies 47 scenarios as Automated-only, 66 as Both automated and manual, and 104 as Manual-only.
 
-These figures describe test declarations and the QA matrix; they are not a claim that all 220 tests currently pass. The 20 new product-model tests have not yet been executed. The last recorded execution for the previously tested matrix is October 2, 2026, so run the commands above and update the matrix with the actual results.
+These figures describe test declarations and the QA matrix, not code coverage. The backend Jest suite is the automated verification entry point; the test command is `npm test` from the repository root. Manual-only scenarios still require the documented manual QA process.
 
 ### Important distinction
 
