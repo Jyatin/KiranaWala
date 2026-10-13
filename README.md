@@ -77,7 +77,7 @@ The repository's seed script is designed to populate **20 Bengaluru demo stores 
 - Progress orders through supported fulfilment states.
 - Validate a delivery OTP when the delivery route transitions an order to delivered.
 
-The delivery routes and order model implement workflow primitives; do not interpret them as proof of live courier dispatch, route optimisation, or GPS navigation.
+The delivery routes and order model contain workflow primitives, but the delivery route's upsert payload should be checked against the separate Delivery model's field names and nested address schema. Treat delivery assignment as an integration area requiring route/model alignment and end-to-end tests—not proof of live courier dispatch, route optimisation, or GPS navigation.
 
 ### Payments and promotions
 
@@ -102,13 +102,13 @@ The AI implementation is separated into:
 
 The AI does not receive unrestricted database-write tools. The backend remains responsible for authoritative commerce state and must validate any subsequent cart or checkout action.
 
-### Reviews, notifications, and subscriptions
+### Reviews, notifications, and subscriptions (implementation status varies)
 
-- **Reviews:** endpoints support product/store reviews and ratings, with purchase-history checks used to identify verified-purchase reviews.
-- **In-app notifications:** retrieve a user's notifications, calculate unread counts, and mark one or all notifications as read.
-- **Recurring subscriptions:** create and list recurring grocery subscription records and update their status (active, paused, or cancelled), with frequency and delivery preferences.
+- **Reviews:** product/store review routes and a review model are present. However, the current create/list handlers and Mongoose schema use inconsistent field names and approval fields; review creation and retrieval should not be described as verified end-to-end until that contract is aligned and tested.
+- **In-app notifications:** authenticated endpoints retrieve a user's notifications, calculate unread counts, and mark one or all notifications as read. The route module does not itself demonstrate delivery through push notifications, SMS, or WhatsApp.
+- **Recurring subscriptions:** subscription routes and a data model are present for frequency, delivery preferences, and active/paused/cancelled states. The current create handler does not populate all schema-required fields and uses some mismatched field names, so subscription creation needs a route/schema fix and tests before it should be considered operational end-to-end.
 
-The subscription endpoints establish subscription records and status management. Automatic generation and fulfilment of every future recurring order should not be assumed unless a scheduler/worker and its end-to-end behaviour are separately verified.
+These modules represent intended capabilities in the codebase, but route presence is not proof of a working end-to-end feature. Automatic generation and fulfilment of future recurring orders should not be assumed without a verified scheduler/worker and integration tests.
 
 ### Location-aware discovery
 
@@ -213,6 +213,16 @@ The webhook handler:
 - returns non-2xx responses for processing failures so the provider can retry.
 
 The raw-body middleware is registered before the general JSON parser. The ledger helps detect duplicate events, but **exactly-once side effects are not guaranteed**. A crash between an order update and a separate side effect—such as refund-related stock restoration—can leave partial state. Automated reconciliation against Razorpay's authoritative payment state remains future work.
+
+### Route/model integration gaps
+
+The repository currently contains some cross-layer contract mismatches that should be resolved before claiming every route is production-ready:
+
+- **Reviews:** the create handler writes fields such as `customer`, `title`, and `status`, while the Mongoose schema requires `user`, `userName`, and `order` and uses `isApproved`. The list handlers also query an approval field that does not match the schema.
+- **Subscriptions:** the create handler does not supply all required subscription and item fields (including `title` and item `name`) and uses `deliverySlot` / `subtotalPerDelivery` fields that are not defined in the schema.
+- **Delivery:** the claim handler's upsert payload uses names and address shapes that do not fully match the Delivery model.
+
+These are source-level observations, not claims that runtime tests have reproduced each failure. Align the contracts, add route-level integration tests, and then update this section based on verified behaviour.
 
 ### AI safety boundary
 
@@ -474,10 +484,13 @@ The following are explicit boundaries to keep the project's claims accurate:
 1. **No complete payment reconciliation worker:** divergence between Razorpay and application payment/order state is not automatically reconciled by a dedicated worker.
 2. **Webhook side effects are not one distributed transaction:** a crash between related writes can leave partial state, even when event IDs are deduplicated.
 3. **Multi-item inventory is not automatically transactionally atomic:** per-product conditional updates do not guarantee an all-or-nothing cart reservation.
-4. **Subscription automation needs separate verification:** subscription records and status management exist; a complete scheduled order-generation and fulfilment pipeline should not be claimed without verifying the worker/scheduler.
-5. **Frontend automated tests are not included in the root test command:** `npm test` runs the backend Jest suite.
-6. **Docker configuration needs alignment:** the compose frontend currently targets the static `public/` directory rather than the Next.js frontend.
-7. **Live merchant claims must be evidence-based:** seeded demo data and local workflow feedback should be described separately from independently verified active merchants.
+4. **Review route/schema contract needs alignment:** review creation and listing handlers do not currently match the review schema's required fields and approval field.
+5. **Subscription route/schema contract needs alignment:** the creation handler does not currently populate all schema-required fields and uses fields not declared in the schema.
+6. **Delivery route/model contract needs alignment:** the delivery claim upsert uses field names/shapes that differ from the Delivery model.
+7. **Subscription automation needs separate verification:** a complete scheduled order-generation and fulfilment pipeline should not be claimed without verifying the worker/scheduler.
+8. **Frontend automated tests are not included in the root test command:** `npm test` runs the backend Jest suite.
+9. **Docker configuration needs alignment:** the compose frontend currently targets the static `public/` directory rather than the Next.js frontend.
+10. **Live merchant claims must be evidence-based:** seeded demo data and local workflow feedback should be described separately from independently verified active merchants.
 
 These limitations are useful engineering discussion points: they identify the difference between implemented workflows and stronger reliability guarantees.
 
