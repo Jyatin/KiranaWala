@@ -277,20 +277,20 @@ The existing suite contains tests for backend behaviour across:
 - **Validation and integration:** invalid inputs, error handling, and database-backed API workflows.
 - **AI-assisted shopping:** AI-related shopping behaviour covered by the current tests.
 
-### Payment webhook behaviour and verification status
+### Payment webhook security and idempotency
 
-The current webhook route contains status checks intended to avoid repeating some payment and refund transitions. However, the implementation does **not** persist Razorpay event IDs in a dedicated event ledger, so durable duplicate-event deduplication has not been established. The route also does not implement a scheduled reconciliation worker that compares local payment/order state with Razorpay's authoritative state.
+The webhook handler now includes the following safeguards:
 
-The following implementation gaps must be addressed before describing these as production-grade capabilities:
+- **Required signature verification:** rejects requests when `RAZORPAY_WEBHOOK_SECRET` or the `x-razorpay-signature` header is missing, and verifies the HMAC-SHA256 signature against the original raw request bytes.
+- **Persistent event ledger:** stores Razorpay event IDs in a MongoDB collection with a unique index, preventing the same event ID from being claimed as a new event more than once.
+- **Processing state:** records events as `processing`, `processed`, or `failed`. Failed or stale processing attempts can be reclaimed; active duplicates receive a non-2xx response so the provider can retry.
+- **Retry-aware errors:** returns a non-2xx response when processing fails instead of acknowledging an unsuccessful attempt with HTTP 200.
 
-- **Signature enforcement:** verification is conditional. If the webhook secret or signature header is absent, the current handler does not reject the request.
-- **Retry behaviour:** the error path returns HTTP 200 even when processing fails, potentially acknowledging an event that was not processed successfully.
-- **Concurrent deliveries:** status checks alone do not guarantee exactly-once side effects when duplicate events arrive concurrently.
-- **Refund side effects:** refund handling updates order state and restores stock, but this is not a reconciliation workflow.
+The raw-body middleware is registered before `express.json()` so signature verification uses the exact request bytes received by the server.
 
-Until these gaps are fixed and tested, describe webhook handling as implemented but **idempotency and reconciliation as unverified**. A robust fix should require a valid signature for every webhook, persist event IDs with a unique database constraint, make state transitions and side effects safe under retries/concurrency, return a retryable non-2xx response on transient processing failures, and add a reconciliation job that queries Razorpay and repairs mismatched local state.
+**Remaining limitation:** an event ledger is not a complete distributed transaction. A process crash between an order update and a separate side effect (for example, refund stock restoration) can still leave partial state. Reconciliation against Razorpay's authoritative payment state has **not** been implemented by this change. Do not claim exactly-once side effects or payment/order reconciliation until those paths have dedicated recovery logic and tests.
 
-Tests should cover duplicate and concurrent deliveries, missing/invalid signatures, database failures, repeated refund events, and reconciliation outcomes.
+Tests have been added for missing signatures, invalid signatures, and repeated event IDs. They must be run in the project environment before their passing status can be claimed. Additional tests should cover concurrent duplicate deliveries, retry after processing failure, stale-event recovery, and failures between order updates and stock side effects.
 
 ### Current test inventory and QA status
 
