@@ -25,6 +25,9 @@ const app = express();
 // =====================================================
 
 app.use(cors());
+
+// Preserve exact request bytes for Razorpay HMAC verification before JSON parsing.
+app.use("/api/payments/webhook", express.raw({ type: "application/json" }));
 app.use(express.json());
 
 // Serve public files
