@@ -98,16 +98,17 @@ The frontend is responsible for presentation and user interaction. Commerce-crit
 
 ## Engineering Highlights
 
-### 1. Race-Safe Inventory
+### 1. Inventory Concurrency and Transaction Boundaries
 
-Inventory is treated as a consistency problem rather than a frontend counter.
+Inventory correctness has two distinct levels: **per-product atomicity** and **multi-product checkout consistency**.
 
-- Stock changes are performed with **atomic conditional decrements**.
-- The stock condition is checked as part of the database operation rather than using an unsafe read → check → write sequence.
-- Temporary inventory reservations use TTL-based expiry.
-- Concurrent checkout scenarios are tested to detect overselling.
+- **Per-product atomicity:** an atomic conditional stock update checks availability and decrements a product's quantity in one database operation. Competing updates for the same product cannot both succeed based on the same remaining unit.
+- **Multi-product checkout:** a cart may contain several distinct product documents. Atomicity for each document does **not**, by itself, make the entire cart update all-or-nothing. If one product update succeeds and a later product update fails, earlier changes need a reliable rollback or a database transaction.
+- **Rollback is not the same as a transaction:** compensating stock increments can themselves fail or be interrupted by a process crash. Unless all relevant writes are committed within a MongoDB transaction, do not describe a multi-item checkout as having a guaranteed atomic commit/rollback.
+- **Reservations and expiry:** temporary reservations and TTL cleanup address reservation lifetime; they do not independently provide transaction-level guarantees across all products in a cart.
+- **Verification boundary:** concurrency tests can provide evidence for the scenarios they exercise, but they do not prove every interleaving or failure-recovery path is safe.
 
-This is designed to prevent two customers from successfully purchasing the same final unit when requests arrive concurrently.
+The per-product conditional update is a useful overselling defense. The stronger guarantee that a multi-product cart either reserves every item or reserves none depends on the actual checkout implementation, transaction configuration, and tested rollback/recovery paths. This README does not claim that stronger guarantee without those conditions being established.
 
 ### 2. Payment State Machine
 
