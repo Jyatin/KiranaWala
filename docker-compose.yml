@@ -18,9 +18,13 @@ services:
       - mongo-data:/data/db
 
   frontend:
-    build: ./public
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
     ports:
-      - "80:80"
+      - "3001:3000"
+    depends_on:
+      - server
 
 volumes:
   mongo-data:
