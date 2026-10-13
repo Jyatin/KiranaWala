@@ -92,23 +92,24 @@ The webhook ledger reduces duplicate event processing but does not make all orde
 
 ### AI-assisted shopping
 
-KiranaWala integrates Google's Gemini SDK through a server-side provider adapter. The AI service can interpret shopping requests and invoke declared tools for catalogue and store discovery.
+KiranaWala uses Google's `@google/generative-ai` SDK with **Gemini 1.5 Flash** by default (`server/services/ai/aiProviderAdapter.js`). `GEMINI_API_KEY` is read server-side; it is not intended for the browser. The provider adapter configures a system instruction, safety thresholds, a low temperature, a response-token limit, and Gemini function calling in `AUTO` mode.
 
-The AI implementation is separated into:
-- **Provider adapter:** contains the Gemini-specific integration and reads the API key from the server environment.
-- **Orchestration service:** manages the conversation and bounded tool-calling loop.
-- **Prompt configuration:** supplies the application's shopping-oriented system instructions.
-- **Tool layer:** validates inputs, limits result sizes, uses safe data projections, and exposes read-only database operations to the model.
+The implementation is split into four layers:
 
-The AI does not receive unrestricted database-write tools. The backend remains responsible for authoritative commerce state and must validate any subsequent cart or checkout action.
+1. **Provider adapter —** creates a stateful Gemini chat session and keeps provider-specific SDK usage in one module.
+2. **Orchestrator —** `server/services/ai/aiService.js` declares the available function schemas, processes function-call responses, sends tool results back to Gemini, and caps the loop at five tool iterations.
+3. **Read-only tool layer —** `server/services/ai/aiTools.js` executes only the application's declared database reads. Tools include product search, nearby-store discovery, product detail/availability lookup, and shopping-intent basket suggestions. They do not create orders, update inventory, or mutate customer data.
+4. **Route and validation boundary —** `POST /api/customer/ai/chat` is JWT-authenticated and customer-role protected. It validates a non-empty message (maximum 2,000 characters), applies an in-memory rate limit, and returns a shaped response rather than raw provider output or internal reasoning.
 
-### Reviews, notifications, and subscriptions (implementation status varies)
+Tool inputs are validated before database access: product/store IDs are checked, coordinates must be within latitude/longitude bounds, product search results are capped at 20 (default 10), and nearby-store radius defaults to 8 km with a 50 km maximum. The tool layer projects safe product/store fields instead of exposing raw MongoDB documents. These controls reduce the model's authority, but do not replace normal backend validation for cart, checkout, pricing, inventory, or authorization.
 
-- **Reviews:** product/store review routes and a review model are present. However, the current create/list handlers and Mongoose schema use inconsistent field names and approval fields; review creation and retrieval should not be described as verified end-to-end until that contract is aligned and tested.
-- **In-app notifications:** authenticated endpoints retrieve a user's notifications, calculate unread counts, and mark one or all notifications as read. The route module does not itself demonstrate delivery through push notifications, SMS, or WhatsApp.
-- **Recurring subscriptions:** subscription routes and a data model are present for frequency, delivery preferences, and active/paused/cancelled states. The current create handler does not populate all schema-required fields and uses some mismatched field names, so subscription creation needs a route/schema fix and tests before it should be considered operational end-to-end.
+### Reviews, notifications, and subscriptions — status and boundaries
 
-These modules represent intended capabilities in the codebase, but route presence is not proof of a working end-to-end feature. Automatic generation and fulfilment of future recurring orders should not be assumed without a verified scheduler/worker and integration tests.
+- **Reviews:** endpoints exist for review submission and product/store review listing, including a purchase-verification check and product-rating recalculation in the route. However, route handlers and the Mongoose model disagree on required field names and approval state. Treat this as implemented route logic with a known integration defect, not a verified working review flow.
+- **In-app notifications:** authenticated endpoints list notifications, return an unread count, mark a notification read, and mark all notifications read. No push, SMS, email, or WhatsApp delivery provider is implemented by these routes.
+- **Recurring subscriptions:** endpoints list, create, and pause/resume/cancel subscription records with frequency and preferred delivery data in the model. The current create handler omits schema-required values and uses fields that do not match the model. A verified scheduler/order-generation worker is also not present, so automatic recurring order fulfilment must not be claimed.
+
+These modules are included in the architecture, but route presence alone does not establish an operational end-to-end feature. The known route/model mismatches are documented under [Known limitations](#known-limitations-and-next-steps).
 
 ### Location-aware discovery
 
@@ -279,7 +280,31 @@ The Express server mounts the following route groups. Individual endpoints have 
 - `POST /api/payments/verify` — verifies the payment through the payment service.
 - `POST /api/payments/webhook` — receives Razorpay webhook events; signature verification requires the raw request body and configured webhook secret.
 
-This is a route-group overview, not a complete OpenAPI specification. For request bodies, response schemas, and access rules, inspect the corresponding files under `server/routes/`.
+#### Endpoint index
+
+Paths below are relative to the route-group base path. Authentication/role middleware and request validation vary by endpoint; inspect the linked route source before calling a protected route. This is a source-derived index, not an OpenAPI contract.
+
+| Group | Endpoints |
+|---|---|
+| Customer (`/api/customer`) | `POST /register`, `POST /login`, `GET /me`, `GET /stores`, `GET /stores/nearby`, `GET /stores/:storeId`, `GET /stores/:storeId/products`, `GET /products/search`, `GET /products/compare`, `GET /cart`, `POST /cart/items`, `PATCH /cart/items/:productId`, `DELETE /cart/items/:productId`, `DELETE /cart`, `POST /cart/basket`, `GET /cart/smart-optimization`, `POST /orders`, `GET /orders`, `GET /orders/:orderId`, `PATCH /orders/:orderId/cancel` ([source](./server/routes/customerRoutes.js)) |
+| Store / store owner (`/api/store`, `/api/store-owner`) | `POST /register`, `POST /login`, `POST /products`, `GET /products/:storeId`, `PUT /products/:productId`, `DELETE /products/:productId/:storeId`, `GET /all`, `GET /:storeId/products`, `GET /orders`, `GET /orders/:orderId`, `PATCH /orders/:orderId/status`, `GET /analytics`, `GET /intelligence/demand-forecast`, `POST /intelligence/ai-manager`, `PATCH /inventory/update`, `GET /catalog`, `PATCH /store/status`, `GET /me` ([source](./server/routes/storeRoutes.js)) |
+| AI (`/api/customer/ai`) | `POST /chat` ([source](./server/routes/aiRoutes.js)) |
+| Coupons (`/api/coupons`) | `GET /`, `POST /validate`, `POST /create` ([source](./server/routes/couponRoutes.js)) |
+| Payments (`/api/payments`) | `POST /create-order`, `POST /verify`, `POST /webhook`, `POST /failure`, `POST /refund` ([source](./server/routes/paymentRoutes.js)) |
+| Delivery (`/api/delivery`) | `GET /orders`, `GET /available`, `PATCH /orders/:id/claim`, `PATCH /orders/:id/status`, `GET /orders/:id/track`, `GET /earnings` ([source](./server/routes/deliveryRoutes.js)) |
+| Reviews (`/api/reviews`) | `POST /`, `GET /product/:productId`, `GET /store/:storeId` ([source](./server/routes/reviewRoutes.js)) |
+| Notifications (`/api/notifications`) | `GET /`, `PATCH /:id/read`, `POST /mark-all-read` ([source](./server/routes/notificationRoutes.js)) |
+| Subscriptions (`/api/subscriptions`) | `GET /`, `POST /`, `PATCH /:id/status` ([source](./server/routes/subscriptionRoutes.js)) |
+
+### Screenshots
+
+The repository includes desktop and mobile shop screenshots. They are checked-in visual references, not automatically refreshed screenshots from the current live deployment.
+
+| Desktop shopping view | Mobile shopping view |
+|---|---|
+| ![KiranaWala desktop shop screenshot](./public/images/qa-shop-1440x900.png) | ![KiranaWala mobile shop screenshot](./public/images/qa-shop-390x844.png) |
+
+For request bodies, response schemas, and access rules, inspect the corresponding route source files linked above. A complete OpenAPI schema is not currently maintained.
 
 ---
 
@@ -308,7 +333,7 @@ KiranaWala/
 └── README.md
 ```
 
-The repository contains both the Next.js frontend and public/Express-served assets. Treat the current Next.js application under `src/` as the primary frontend described by the live application link.
+The repository contains both the Next.js frontend and legacy public/Express-served assets. The Docker Compose configuration now builds the current Next.js app from the repository root using `Dockerfile.frontend`; `public/Dockerfile` remains only for the legacy static assets.
 
 ---
 
@@ -376,7 +401,7 @@ npm run seed
 
 ## Environment variables
 
-The backend reads environment configuration from `server/.env`. The committed `server/.env.example` currently documents `MONGO_URI`, `JWT_SECRET`, `PORT`, and `GEMINI_API_KEY`. Payment configuration also uses the variables below.
+The Express backend loads `server/.env` explicitly from `server/server.js`. Copy the example file with `cp server/.env.example server/.env`, then edit it. The Next.js frontend is started from the repository root; do not put server-only secrets in `NEXT_PUBLIC_*` variables or frontend code. Payment configuration is read by the backend even though the example file currently lists only the core variables.
 
 | Variable | Purpose | Required when |
 |---|---|---|
@@ -471,9 +496,18 @@ The repository's documented hosting setup is:
 
 Configure backend environment variables in the deployment provider rather than committing secrets. Ensure the frontend points to the intended backend URL and that CORS settings match the deployed frontend.
 
-### Docker note
+### Docker Compose
 
-The repository contains Docker configuration, but the current `docker-compose.yml` builds the frontend from `./public` using an Nginx image, while the primary frontend described here is the Next.js app under `src/`. Therefore, do not assume the existing compose file runs the complete current Next.js application without further configuration. Verify or update the Docker setup before relying on it for full-stack development or deployment.
+The Compose frontend now builds from `Dockerfile.frontend` at the repository root, installs the root lockfile dependencies, runs `npm run build`, and serves the Next.js application with `npm start`. It no longer serves only `./public` through Nginx. The legacy `public/Dockerfile` remains available for static assets only.
+
+```bash
+cp server/.env.example server/.env
+# Edit server/.env; for Compose, set MONGO_URI to mongodb://mongo:27017/kiranawala
+# Keep JWT_SECRET and any optional provider credentials configured.
+docker compose up --build
+```
+
+With the current Compose port mappings, open the frontend at `http://localhost:3001` and the Express API at `http://localhost:3000`. The frontend's API base URL must point at the backend address reachable from the browser; if the current frontend build uses a deployed API URL, local Compose does not automatically rewrite that URL. Confirm the app's API configuration before treating the local stack as a fully integrated environment. The Compose image/build configuration has been updated in source; a successful Docker build and browser smoke test still need to be recorded separately.
 
 ---
 
@@ -489,7 +523,7 @@ The following are explicit boundaries to keep the project's claims accurate:
 6. **Delivery route/model contract needs alignment:** the delivery claim upsert uses field names/shapes that differ from the Delivery model.
 7. **Subscription automation needs separate verification:** a complete scheduled order-generation and fulfilment pipeline should not be claimed without verifying the worker/scheduler.
 8. **Frontend automated tests are not included in the root test command:** `npm test` runs the backend Jest suite.
-9. **Docker configuration needs alignment:** the compose frontend currently targets the static `public/` directory rather than the Next.js frontend.
+9. **Docker validation is pending:** Compose now targets the current Next.js frontend, but image build, container startup, browser smoke test, and local frontend-to-API connectivity have not yet been verified in this environment.
 10. **Live merchant claims must be evidence-based:** seeded demo data and local workflow feedback should be described separately from independently verified active merchants.
 
 These limitations are useful engineering discussion points: they identify the difference between implemented workflows and stronger reliability guarantees.
