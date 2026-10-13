@@ -235,34 +235,60 @@ Invalid or tampered payment signatures are rejected. Razorpay test/sandbox crede
 
 ---
 
-## Testing
+## Testing and Quality Assurance
 
-KiranaWala has **220 test declarations across 18 Jest test files** in the backend test directory, including 20 newly added product-model validation tests. Coverage areas include authentication, authorization, commerce workflows, inventory, orders, coupons, payment processing, AI-assisted shopping, validation, and failure paths. This is a source-level count of `test()` / `it()` declarations; the 20 newly added tests are **not yet executed**, so this change does not claim they pass.
+KiranaWala's backend tests use **Jest**. Run the commands from the repository root unless a command explicitly changes directories.
 
-### Automated coverage areas
+### Run the tests
 
-- Customer and store-owner authentication
-- Role-based authorization and protected API routes
-- Store operations and product validation
-- Cart behaviour and server-side price validation
-- Coupon eligibility and discount validation
-- Inventory and stock behaviour
-- Order creation and lifecycle
-- Payment order creation and amount validation
-- Razorpay signature verification
-- Invalid/tampered payment signatures
-- Payment failure handling
-- Webhook handling and idempotency scenarios
-- Backend validation and error handling
-- Database-backed API workflows
+Install the root and backend dependencies first:
 
-### Concurrency and reliability validation
+```bash
+npm install
+npm install --prefix server
+```
 
-The commerce-critical paths include tests for checkout and failure scenarios, including inventory contention and payment-state recovery. The exact guarantees depend on the scenarios covered by the automated suite and the underlying implementation.
+Then run the backend Jest suite from the repository root:
 
-The repository's `TEST_CASES.md` currently lists **217 QA scenarios**: 197 previously recorded as passing and 20 new product-model scenarios marked **NOT TESTED** pending execution. The matrix now contains **47 scenarios classified as Automated-only** (27 existing + 20 newly documented) and 66 classified as Both. The last recorded execution for the previously tested matrix is October 2, 2026; the newly added tests still require a fresh Jest run.
+```bash
+npm test
+```
 
-> **Testing note:** Automated test coverage is not the same as 100% code coverage. See [TEST_CASES.md](./TEST_CASES.md) for the broader QA matrix and its recorded execution status.
+The root `test` script delegates to the backend test runner with `npm --prefix server test`. You can also run the same suite directly from the backend directory:
+
+```bash
+cd server
+npm test
+```
+
+The backend script runs `jest --runInBand`, which executes tests sequentially. The root command does **not** run a separate frontend test suite.
+
+### What is covered
+
+The existing suite contains tests for backend behaviour across:
+
+- **Authentication and authorization:** customer/store-owner authentication, role-based permissions, and protected routes.
+- **Stores and products:** store operations and product validation.
+- **Cart and checkout:** cart behaviour, server-side price checks, and checkout scenarios.
+- **Coupons and discounts:** coupon eligibility and discount validation.
+- **Inventory and orders:** stock-related behaviour, order creation, and order lifecycle.
+- **Payments:** payment-order creation, amount validation, Razorpay signature verification, invalid signatures, and payment failures.
+- **Webhook reliability:** webhook handling and idempotency scenarios.
+- **Validation and integration:** invalid inputs, error handling, and database-backed API workflows.
+- **AI-assisted shopping:** AI-related shopping behaviour covered by the current tests.
+
+### Current test inventory and QA status
+
+- **220 Jest test declarations** across 18 backend test files, including 20 newly added product-model validation tests.
+- **217 documented QA scenarios** in [`TEST_CASES.md`](./TEST_CASES.md).
+- The matrix records **197 previously passing scenarios** and **20 new scenarios marked `NOT TESTED`** pending execution.
+- The documented matrix classifies 47 scenarios as Automated-only, 66 as Both automated and manual, and 104 as Manual-only.
+
+These figures describe test declarations and the QA matrix; they are not a claim that all 220 tests currently pass. The 20 new product-model tests have not yet been executed. The last recorded execution for the previously tested matrix is October 2, 2026, so run the commands above and update the matrix with the actual results.
+
+### Important distinction
+
+Automated test counts do not equal code coverage, and a test declaration does not prove that a test passes. Manual-only scenarios still need to be checked through the documented manual QA process.
 ---
 
 ## Real-World Validation
@@ -376,30 +402,57 @@ https://kirana-wala-1nhp.vercel.app
 
 ### Prerequisites
 
-- Node.js
-- npm
+- Node.js and npm
 - MongoDB or MongoDB Atlas
 - Docker (optional)
 
-### Clone
+### Clone and install
 
 ```bash
 git clone https://github.com/Jyatin/KiranaWala.git
 cd KiranaWala
 npm install
+npm install --prefix server
 ```
 
-### Environment
+The root install sets up the Next.js application. The second command installs the backend's separate dependencies, including Jest.
 
-Create local environment variables for the database, JWT authentication, Razorpay test credentials, and other application configuration required by the project.
+### Run the application
 
-**Never commit real secrets or production credentials.**
-
-### Run
+Start the frontend:
 
 ```bash
 npm run dev
 ```
+
+Start the backend in a separate terminal:
+
+```bash
+npm run server
+```
+
+### Run backend tests
+
+From the repository root:
+
+```bash
+npm test
+```
+
+Or run the equivalent backend command directly:
+
+```bash
+cd server
+npm test
+```
+
+Both test commands execute the backend Jest suite. See [Testing and Quality Assurance](#testing-and-quality-assurance) for test inventory and status.
+
+### Environment configuration
+
+Create the local environment variables required for the database, JWT authentication, Razorpay test credentials, and other application configuration.
+
+**Never commit real secrets or production credentials.**
 
 Docker-based development is also supported through the project's Docker configuration.
 
