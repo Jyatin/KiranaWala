@@ -1,428 +1,317 @@
-# 🛒 KiranaWala
+# KiranaWala
 
-### Hyperlocal Smart Grocery Commerce Platform
+**Hyperlocal Smart Grocery Commerce Platform**
 
-KiranaWala is a full-stack hyperlocal grocery platform connecting customers with neighbourhood grocery stores through a complete commerce workflow — discovery, catalog browsing, inventory-aware carting, checkout, payment, order fulfilment, and store operations.
+KiranaWala is a full-stack grocery commerce application designed to connect customers with neighbourhood stores. It brings store discovery, product catalogues, cart and checkout, payments, inventory operations, order fulfilment, and AI-assisted shopping into one platform.
 
-**Live:** https://kirana-wala-1nhp.vercel.app  
-**Repository:** https://github.com/Jyatin/KiranaWala
+- **Live application:** https://kirana-wala-1nhp.vercel.app
+- **Backend deployment:** https://kiranawala-api.onrender.com
+- **Source code:** https://github.com/Jyatin/KiranaWala
+- **QA matrix:** [TEST_CASES.md](./TEST_CASES.md)
 
----
-
-## Why KiranaWala?
-
-Local grocery stores often operate without integrated digital catalogues, inventory workflows, online payments, or customer-facing ordering systems. KiranaWala provides a single platform for both sides of the marketplace:
-
-- **Customers:** discover stores, browse products, search/filter, build carts, apply coupons, pay online, and track orders.
-- **Store owners:** manage stores, products, inventory, incoming orders, and fulfilment from a dedicated dashboard.
-
-The project was designed as a real commerce system rather than a basic CRUD e-commerce demo, with particular focus on **payment correctness, inventory consistency, authorization, failure handling, automated testing, and real-world validation**.
+> **Project scope:** KiranaWala is a deployed portfolio project. The repository includes demo-seeding utilities and some integrations that depend on external credentials. A feature being present in the code does not, by itself, mean every production-scale failure path has been verified.
 
 ---
 
-## Core Workflow
+## Contents
 
-```text
-Customer
-  │
-  ├── Discover nearby stores
-  ├── Browse/search products
-  ├── Add products to cart
-  ├── Apply coupon
-  ├── Checkout
-  │      │
-  │      ├── Server validates cart
-  │      ├── Server calculates payable amount
-  │      └── Razorpay order created
-  │
-  ├── Complete payment
-  │      │
-  │      └── Server verifies payment signature
-  │
-  └── Track order
+- [Product overview](#product-overview)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Core workflows](#core-workflows)
+- [Engineering decisions and limitations](#engineering-decisions-and-limitations)
+- [Technology stack](#technology-stack)
+- [API overview](#api-overview)
+- [Repository layout](#repository-layout)
+- [Getting started](#getting-started)
+- [Environment variables](#environment-variables)
+- [Demo data](#demo-data)
+- [Testing and QA](#testing-and-qa)
+- [Deployment](#deployment)
+- [Known limitations and next steps](#known-limitations-and-next-steps)
+- [What this project demonstrates](#what-this-project-demonstrates)
+- [Author](#author)
 
-Store Owner
-  │
-  ├── Authenticate
-  ├── Manage store profile
-  ├── Add/edit/delete products
-  ├── Update inventory
-  ├── Receive orders
-  └── Update fulfilment status
-```
+---
+
+## Product overview
+
+Traditional neighbourhood grocery stores may lack integrated digital catalogues, online ordering, inventory visibility, and customer-facing fulfilment tools. KiranaWala explores how a shared digital platform can support both sides of local commerce.
+
+### Customer experience
+
+Customers can discover stores, search and filter grocery products, review product details, manage a cart, apply eligible coupons, place orders, complete payment flows, and follow order status. An AI-assisted shopping experience helps translate natural-language requests into relevant catalogue discovery.
+
+### Store and fulfilment operations
+
+Store-owner routes support store and product management, inventory updates, and order workflows. Dedicated delivery routes support delivery partners in finding available orders, claiming work, and advancing fulfilment status.
+
+### Demo catalogue
+
+The repository's seed script is designed to populate **20 Bengaluru demo stores and 200+ grocery products**. This is seeded sample data, not a claim that 20 independent merchants are actively operating on the live deployment.
+
+---
+
+## Features
+
+### Customer shopping
+
+- Store and product discovery, including search and category filtering.
+- Store-level product browsing and product detail views.
+- Cart and checkout workflows with server-side validation.
+- Coupon discovery and validation for eligible orders.
+- Customer order history, status tracking, and dashboard views.
+- Responsive layouts and loading, empty, and error states documented in the QA matrix.
+
+### Store-owner operations
+
+- Store-owner authentication and protected management routes.
+- Store profile and product catalogue management.
+- Inventory updates and order fulfilment workflows.
+- Server-side role and ownership checks for protected operations.
+
+### Delivery-partner workflow
+
+- View orders available for pickup and orders assigned to the logged-in delivery partner.
+- Claim eligible orders that are ready and unassigned.
+- Progress orders through supported fulfilment states.
+- Validate a delivery OTP when the delivery route transitions an order to delivered.
+
+The delivery routes and order model implement workflow primitives; do not interpret them as proof of live courier dispatch, route optimisation, or GPS navigation.
+
+### Payments and promotions
+
+- Razorpay order creation and server-side payment verification.
+- Payable amount derived on the backend rather than trusted from client input.
+- HMAC-SHA256 verification for payment signatures.
+- Coupon validation for validity dates, minimum order value, store applicability, and usage limits.
+- Webhook event ledger with duplicate-event detection and retry-aware processing.
+- Refund event handling in the webhook workflow.
+
+The webhook ledger reduces duplicate event processing but does not make all order and inventory side effects one atomic distributed transaction. See [Engineering decisions and limitations](#engineering-decisions-and-limitations).
+
+### AI-assisted shopping
+
+KiranaWala integrates Google's Gemini SDK through a server-side provider adapter. The AI service can interpret shopping requests and invoke declared tools for catalogue and store discovery.
+
+The AI implementation is separated into:
+- **Provider adapter:** contains the Gemini-specific integration and reads the API key from the server environment.
+- **Orchestration service:** manages the conversation and bounded tool-calling loop.
+- **Prompt configuration:** supplies the application's shopping-oriented system instructions.
+- **Tool layer:** validates inputs, limits result sizes, uses safe data projections, and exposes read-only database operations to the model.
+
+The AI does not receive unrestricted database-write tools. The backend remains responsible for authoritative commerce state and must validate any subsequent cart or checkout action.
+
+### Reviews, notifications, and subscriptions
+
+- **Reviews:** endpoints support product/store reviews and ratings, with purchase-history checks used to identify verified-purchase reviews.
+- **In-app notifications:** retrieve a user's notifications, calculate unread counts, and mark one or all notifications as read.
+- **Recurring subscriptions:** create and list recurring grocery subscription records and update their status (active, paused, or cancelled), with frequency and delivery preferences.
+
+The subscription endpoints establish subscription records and status management. Automatic generation and fulfilment of every future recurring order should not be assumed unless a scheduler/worker and its end-to-end behaviour are separately verified.
+
+### Location-aware discovery
+
+Store documents support GeoJSON point coordinates and a MongoDB 2dsphere index. Location-aware discovery and distance-based results are used in parts of the application. This is not a claim of continuous customer tracking or turn-by-turn navigation.
 
 ---
 
 ## Architecture
 
 ```text
-                         ┌──────────────────────┐
-                         │       Customer       │
-                         └──────────┬───────────┘
-                                    │
-                                    ▼
-                    ┌─────────────────────────────┐
-                    │ Next.js / React / TypeScript │
-                    │ Customer + Store Dashboards  │
-                    └──────────────┬──────────────┘
-                                   │ REST API
-                                   ▼
-                    ┌─────────────────────────────┐
-                    │       Node.js / Express     │
-                    │ Authentication              │
-                    │ Commerce APIs               │
-                    │ Validation + Authorization   │
-                    └───────┬───────────┬─────────┘
-                            │           │
-                            ▼           ▼
-                    ┌────────────┐  ┌──────────────┐
-                    │  MongoDB   │  │   Payment    │
-                    │ Users      │  │   Service    │
-                    │ Stores     │  │   Razorpay   │
-                    │ Products   │  └──────┬───────┘
-                    │ Orders     │         │
-                    │ Inventory  │         ▼
-                    │ Coupons    │  HMAC-SHA256
-                    └────────────┘  verification
-                            │
-                            ▼
-                    ┌────────────────┐
-                    │ Order / Stock  │
-                    │ State Changes  │
-                    └────────────────┘
+Customer / Store Owner / Delivery Partner
+                    |
+                    v
+        Next.js + React + TypeScript
+         Customer and store interfaces
+                    |
+                 REST API
+                    |
+                    v
+           Node.js + Express
+     Authentication / Authorization
+     Validation / Commerce workflows
+       |          |           |
+       v          v           v
+    MongoDB    Razorpay    Gemini API
+  users, stores, payments   AI-assisted
+  products, orders,         discovery
+  inventory, coupons,
+  reviews, subscriptions,
+  notifications, webhook events
+       |
+       v
+ Inventory, order and fulfilment
+ state transitions
 ```
 
-The frontend is responsible for presentation and user interaction. Commerce-critical decisions are enforced by the backend rather than trusting client-supplied state.
+The frontend handles presentation and interaction. The backend is responsible for validating requests and making authoritative decisions about prices, inventory, permissions, payment state, and order state.
+
+### Main domain models
+
+The backend contains Mongoose models for users, stores, products, carts, orders, coupons, deliveries, reviews, notifications, subscriptions, and webhook events. Exact relationships and fields are defined in the model files under `server/models/`.
 
 ---
 
-## Engineering Highlights
+## Core workflows
 
-### 1. Inventory Concurrency and Transaction Boundaries
+### 1. Browse and build a basket
 
-Inventory correctness has two distinct levels: **per-product atomicity** and **multi-product checkout consistency**.
+1. A customer opens store discovery or the product catalogue.
+2. The application retrieves relevant stores/products and applies search or category filters.
+3. The customer adds items to a cart and selects quantities.
+4. The backend validates product and quantity information before accepting commerce operations.
 
-- **Per-product atomicity:** an atomic conditional stock update checks availability and decrements a product's quantity in one database operation. Competing updates for the same product cannot both succeed based on the same remaining unit.
-- **Multi-product checkout:** a cart may contain several distinct product documents. Atomicity for each document does **not**, by itself, make the entire cart update all-or-nothing. If one product update succeeds and a later product update fails, earlier changes need a reliable rollback or a database transaction.
-- **Rollback is not the same as a transaction:** compensating stock increments can themselves fail or be interrupted by a process crash. Unless all relevant writes are committed within a MongoDB transaction, do not describe a multi-item checkout as having a guaranteed atomic commit/rollback.
-- **Reservations and expiry:** temporary reservations and TTL cleanup address reservation lifetime; they do not independently provide transaction-level guarantees across all products in a cart.
-- **Verification boundary:** concurrency tests can provide evidence for the scenarios they exercise, but they do not prove every interleaving or failure-recovery path is safe.
+### 2. Checkout and payment
 
-The per-product conditional update is a useful overselling defense. The stronger guarantee that a multi-product cart either reserves every item or reserves none depends on the actual checkout implementation, transaction configuration, and tested rollback/recovery paths. This README does not claim that stronger guarantee without those conditions being established.
+1. The backend validates the order/cart data and calculates the authoritative payable amount.
+2. Inventory reservation logic uses conditional database updates to check availability while reserving stock.
+3. The payment service creates a Razorpay order when configured for the real provider, or uses its development mock provider only in non-production environments when credentials are unavailable.
+4. The backend verifies the payment signature before accepting a successful payment transition.
+5. Payment webhooks are checked against the configured webhook secret and recorded in a persistent event ledger.
 
-### 2. Payment State Machine
+### 3. Store and delivery fulfilment
 
-The payment flow is implemented server-side and treats payment as a state-transition problem.
+1. Store-side workflows move an order through preparation and ready states.
+2. A delivery partner can list eligible orders and claim an unassigned ready order.
+3. Delivery status progresses through supported states.
+4. The delivery endpoint checks the submitted OTP when marking an order delivered.
 
-```text
-Checkout
-   │
-   ▼
-Order / Payment Pending
-   │
-   ▼
-Razorpay Order
-   │
-   ▼
-Customer Payment
-   │
-   ├── Failure ───────► Payment Failed
-   │
-   └── Success
-          │
-          ▼
-Server-side HMAC-SHA256 verification
-          │
-          ▼
-Payment / Order State Updated
-```
+Exact transition rules are implemented in the route handlers. This workflow description is not a guarantee of a fully automated dispatch system.
 
-The backend:
+### 4. AI-assisted catalogue discovery
 
-- calculates and validates the payable amount
-- creates the Razorpay order
-- never treats a client-supplied amount as authoritative
-- verifies the Razorpay signature using HMAC-SHA256
-- handles payment success and failure states
-- processes payment events idempotently
-- records payment events durably to support safe retries; automated reconciliation is not yet implemented
-
-### 3. Idempotent Payment Webhooks
-
-Payment events can be delivered more than once, so webhook processing is designed to be idempotent.
-
-- Payment/event identifiers are used to recognize duplicate events.
-- State transitions are guarded so the same payment cannot be applied repeatedly.
-- A reconciliation worker for cases where provider and application state diverge remains future work.
-
-### 4. AI-Assisted Shopping
-
-KiranaWala includes an AI-assisted shopping workflow that lets users express shopping intent naturally.
-
-```text
-Natural-language shopping intent
-            │
-            ▼
-      AI interpretation
-            │
-            ▼
- Relevant catalogue products
-            │
-            ▼
- Server validation
-            │
-            ▼
-      Cart actions
-```
-
-The model does not get unrestricted authority over commerce operations. Product/cart actions are validated by the backend before state is changed.
-
-### 5. Authentication & Authorization
-
-- JWT-based authentication
-- Customer/store-owner role separation
-- Protected backend routes
-- Backend authorization rather than frontend-only checks
-- Ownership-aware commerce operations
-
-### 6. Database-Backed Commerce
-
-MongoDB persists the application's core commerce state:
-
-- users
-- stores
-- products
-- inventory
-- carts
-- coupons
-- orders
-- payment state
-
-Commerce operations are validated on the backend so the client cannot directly define authoritative prices, stock, payment status, or order state.
+1. A customer submits a natural-language shopping request.
+2. The server-side AI service sends the request to Gemini with the configured system instructions and tool declarations.
+3. The model may request a read-only catalogue/store tool.
+4. Tool inputs are validated, database results are shaped into limited response objects, and results are returned to the conversation.
+5. The service returns a final response and the tools used; it does not expose raw provider responses or tool arguments as its public response contract.
 
 ---
 
-## Payment Security
+## Engineering decisions and limitations
 
-Razorpay is integrated through a server-controlled payment flow.
+### Inventory concurrency: per-product atomicity vs. cart-level atomicity
 
-```text
-Client
-  │
-  │ checkout request
-  ▼
-Backend
-  │
-  ├── Load authoritative product prices
-  ├── Validate cart / inventory
-  ├── Calculate payable amount
-  └── Create Razorpay order
-          │
-          ▼
-      Razorpay Checkout
-          │
-          ▼
-     Payment response
-          │
-          ▼
-Backend verification
-          │
-          ├── HMAC-SHA256 signature check
-          ├── Duplicate-event protection
-          └── Payment/order state transition
-```
+Inventory correctness has two different levels.
 
-Invalid or tampered payment signatures are rejected. Razorpay test/sandbox credentials are used for development; secrets are not intended to be committed to the repository.
+- **Per-product atomicity:** a conditional stock update checks availability and decrements a product's quantity in one database operation. This helps prevent competing requests from selling the same remaining unit.
+- **Multi-product checkout:** a cart can touch several product documents. Atomic updates to each document do not, by themselves, make the complete cart operation all-or-nothing.
+- **Compensating rollback:** restoring stock after a later item fails can itself fail or be interrupted. A compensating update is not equivalent to a transaction.
+- **Reservations and expiry:** the inventory service uses temporary reservations with a default 15-minute TTL. Expiry/release behaviour does not independently guarantee transaction-level consistency across every product in a cart.
+- **Verification boundary:** tests demonstrate only the scenarios they exercise; they do not prove every possible interleaving or crash-recovery path.
 
----
+Do not claim that every multi-item checkout has a guaranteed atomic commit/rollback unless the relevant database transaction or complete recovery design is established and tested.
 
-## Testing and Quality Assurance
+### Payment webhook idempotency
 
-KiranaWala's backend tests use **Jest**. Run the commands from the repository root unless a command explicitly changes directories.
+The webhook handler:
+- requires the configured `RAZORPAY_WEBHOOK_SECRET`, signature header, event ID, and raw request body;
+- validates the HMAC-SHA256 signature against the original request bytes;
+- stores event IDs in a MongoDB ledger with a unique index;
+- tracks processing states (`processing`, `processed`, and `failed`);
+- returns non-2xx responses for processing failures so the provider can retry.
 
-### Run the tests
+The raw-body middleware is registered before the general JSON parser. The ledger helps detect duplicate events, but **exactly-once side effects are not guaranteed**. A crash between an order update and a separate side effect—such as refund-related stock restoration—can leave partial state. Automated reconciliation against Razorpay's authoritative payment state remains future work.
 
-Install the root and backend dependencies first:
+### AI safety boundary
 
-```bash
-npm install
-npm install --prefix server
-```
+The AI database tool layer is intended to be read-only, validates tool inputs, limits query sizes, and shapes returned objects to avoid passing raw database documents to the model. AI output is not an authority for price, stock, payment status, or order state.
 
-Then run the backend Jest suite from the repository root:
+### Authentication and authorization
 
-```bash
-npm test
-```
-
-The root `test` script delegates to the backend test runner with `npm --prefix server test`. You can also run the same suite directly from the backend directory:
-
-```bash
-cd server
-npm test
-```
-
-The backend script runs `jest --runInBand`, which executes tests sequentially. The root command does **not** run a separate frontend test suite.
-
-### What is covered
-
-The existing suite contains tests for backend behaviour across:
-
-- **Authentication and authorization:** customer/store-owner authentication, role-based permissions, and protected routes.
-- **Stores and products:** store operations and product validation.
-- **Cart and checkout:** cart behaviour, server-side price checks, and checkout scenarios.
-- **Coupons and discounts:** coupon eligibility and discount validation.
-- **Inventory and orders:** stock-related behaviour, order creation, and order lifecycle.
-- **Payments:** payment-order creation, amount validation, Razorpay signature verification, invalid signatures, and payment failures.
-- **Payment webhooks:** selected payment/refund events, raw-body HMAC signature checks, and persistent event-ID deduplication; automated reconciliation remains unimplemented (see below).
-- **Validation and integration:** invalid inputs, error handling, and database-backed API workflows.
-- **AI-assisted shopping:** AI-related shopping behaviour covered by the current tests.
-
-### Payment webhook security and idempotency
-
-The webhook handler now includes the following safeguards:
-
-- **Required signature verification:** rejects requests when `RAZORPAY_WEBHOOK_SECRET` or the `x-razorpay-signature` header is missing, and verifies the HMAC-SHA256 signature against the original raw request bytes.
-- **Persistent event ledger:** stores Razorpay event IDs in a MongoDB collection with a unique index, preventing the same event ID from being claimed as a new event more than once.
-- **Processing state:** records events as `processing`, `processed`, or `failed`. Failed or stale processing attempts can be reclaimed; active duplicates receive a non-2xx response so the provider can retry.
-- **Retry-aware errors:** returns a non-2xx response when processing fails instead of acknowledging an unsuccessful attempt with HTTP 200.
-
-The raw-body middleware is registered before `express.json()` so signature verification uses the exact request bytes received by the server.
-
-**Remaining limitation:** an event ledger is not a complete distributed transaction. A process crash between an order update and a separate side effect (for example, refund stock restoration) can still leave partial state. Reconciliation against Razorpay's authoritative payment state has **not** been implemented. Do not claim exactly-once side effects or payment/order reconciliation until those paths have dedicated recovery logic and tests.
-
-The webhook tests cover missing signatures, invalid signatures, and repeated event IDs. Further hardening should cover concurrent duplicate deliveries, retry after processing failure, stale-event recovery, and failures between order updates and stock side effects.
-
-### Current test inventory and QA status
-
-- **220 Jest test declarations** across 18 backend test files, including 20 newly added product-model validation tests.
-- **217 documented QA scenarios** in [`TEST_CASES.md`](./TEST_CASES.md).
-- The matrix contains **217 documented QA scenarios**; use the test suite and manual QA process to validate behavior in the target environment.
-- The documented matrix classifies 47 scenarios as Automated-only, 66 as Both automated and manual, and 104 as Manual-only.
-
-These figures describe test declarations and the QA matrix, not code coverage. The backend Jest suite is the automated verification entry point; the test command is `npm test` from the repository root. Manual-only scenarios still require the documented manual QA process.
-
-### Important distinction
-
-Automated test counts do not equal code coverage, and a test declaration does not prove that a test passes. Manual-only scenarios still need to be checked through the documented manual QA process.
----
-
-## Real-World Validation
-
-The platform was validated with **5 local grocery stores** against realistic operational workflows.
-
-Validation included:
-
-- store onboarding
-- store authentication
-- catalogue/product management
-- inventory updates
-- customer product discovery
-- ordering
-- checkout/payment workflow
-- order fulfilment
-- store-owner dashboard usability
-- operational edge cases
-
-This provided feedback beyond synthetic development-only testing and helped validate whether the workflows made sense for actual neighbourhood-store operations.
+JWT-based authentication and role checks protect backend operations. Customer, store-owner, delivery-partner, and admin-specific behaviour should be assessed at the route level; a protected frontend view is not a substitute for backend authorization.
 
 ---
 
-## UI / UX Quality
-
-The product was reviewed across the complete customer and store-owner journeys, including:
-
-- navigation
-- authentication
-- store discovery
-- product browsing
-- search/filter
-- cart
-- checkout
-- payment
-- order tracking
-- customer dashboard
-- store-owner dashboard
-- inventory management
-- order management
-- responsive layouts
-- loading states
-- empty states
-- error states
-- form validation
-
-The goal was to provide a complete product experience rather than a collection of isolated CRUD screens.
-
----
-
-## Tech Stack
+## Technology stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | Next.js, React, TypeScript, Tailwind CSS |
-| Backend | Node.js, Express.js |
+| Frontend | Next.js, React, TypeScript |
+| Styling and UI | Tailwind CSS, Lucide icons, Motion/GSAP in relevant UI areas |
+| Backend | Node.js, Express |
+| Data access | Mongoose |
 | Database | MongoDB / MongoDB Atlas |
-| Authentication | JWT |
-| Payments | Razorpay |
-| AI | AI-assisted shopping workflow |
-| API | REST |
-| Testing | Automated API/integration test suite |
-| Containers | Docker |
-| CI | GitHub Actions |
-| Frontend Deployment | Vercel |
-| Backend Deployment | Render |
+| Authentication | JWT, bcryptjs |
+| Payments | Razorpay integration and a development-only mock provider |
+| AI | Google Gemini SDK, server-side adapter and tool calling |
+| API style | REST |
+| Backend testing | Jest, Supertest, mongodb-memory-server in the test setup |
+| Frontend hosting | Vercel |
+| Backend hosting | Render |
+| CI configuration | GitHub Actions workflow(s) in `.github/workflows/` |
+
+Dependency versions and scripts are defined in the root and `server/package.json` files.
 
 ---
 
-## Repository Structure
+## API overview
+
+The Express server mounts the following route groups. Individual endpoints have different authentication requirements; check the route handler and middleware before calling them.
+
+| Base path | Responsibility |
+|---|---|
+| `/api/customer` | Customer registration/login, customer-facing store/product/cart/order operations |
+| `/api/customer/ai` | Authenticated AI shopping chat |
+| `/api/store` | Store operations |
+| `/api/store-owner` | Store-owner operations (same route module mounted under this prefix) |
+| `/api/coupons` | Coupon listing, validation, and management endpoints |
+| `/api/payments` | Payment-order creation, payment verification, and Razorpay webhook |
+| `/api/delivery` | Delivery-partner order discovery, claiming, and status transitions |
+| `/api/reviews` | Product/store review submission and retrieval |
+| `/api/notifications` | Notification listing and read-state management |
+| `/api/subscriptions` | Recurring subscription creation, listing, and status management |
+
+### Important payment endpoints
+
+- `POST /api/payments/create-order` — creates a payment order for an authenticated customer's order.
+- `POST /api/payments/verify` — verifies the payment through the payment service.
+- `POST /api/payments/webhook` — receives Razorpay webhook events; signature verification requires the raw request body and configured webhook secret.
+
+This is a route-group overview, not a complete OpenAPI specification. For request bodies, response schemas, and access rules, inspect the corresponding files under `server/routes/`.
+
+---
+
+## Repository layout
 
 ```text
 KiranaWala/
-├── .github/
-│   └── workflows/          # CI workflows
-├── src/                    # Next.js application
-│   ├── app/                # Application routes/pages
-│   ├── components/         # Reusable UI components
-│   └── ...
-├── server/                 # Express backend
-│   ├── models/             # MongoDB models
-│   ├── routes/             # REST API routes
-│   ├── services/           # Backend services
-│   └── ...
-├── public/                 # Static assets
-├── Dockerfile
-├── docker-compose.yml
-├── package.json
+├── .github/workflows/       # CI workflow configuration
+├── src/
+│   ├── app/                 # Next.js App Router pages
+│   ├── components/          # Reusable UI components
+│   └── ...                  # Frontend modules
+├── server/
+│   ├── models/              # Mongoose domain models
+│   ├── routes/              # Express route handlers
+│   ├── services/            # Payment, inventory, coupon and AI services
+│   ├── middleware/          # Authentication/authorization middleware
+│   ├── scripts/             # Demo data seeding
+│   └── __tests__/           # Backend Jest tests
+├── public/                  # Public/static and legacy assets
+├── views/                   # Express-served HTML views
+├── docker-compose.yml       # Existing multi-service configuration
+├── package.json             # Frontend/root scripts and dependencies
+├── server/package.json      # Backend scripts and dependencies
+├── TEST_CASES.md            # Manual/integration QA matrix
 └── README.md
 ```
 
----
-
-## Deployment
-
-| Component | Platform |
-|---|---|
-| Frontend | Vercel |
-| Backend | Render |
-| Database | MongoDB Atlas |
-| Payments | Razorpay Sandbox/Test |
-| CI | GitHub Actions |
-
-### Live application
-
-https://kirana-wala-1nhp.vercel.app
+The repository contains both the Next.js frontend and public/Express-served assets. Treat the current Next.js application under `src/` as the primary frontend described by the live application link.
 
 ---
 
-## Local Development
+## Getting started
 
 ### Prerequisites
 
-- Node.js and npm
-- MongoDB or MongoDB Atlas
-- Docker (optional)
+- A supported Node.js runtime and npm.
+- MongoDB locally or a MongoDB Atlas connection string.
+- Gemini API key if you want to use the AI chat feature.
+- Razorpay credentials for real Razorpay integration; development mock payments are available only in non-production mode when real credentials are not configured.
 
-### Clone and install
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/Jyatin/KiranaWala.git
@@ -431,23 +320,84 @@ npm install
 npm install --prefix server
 ```
 
-The root install sets up the Next.js application. The second command installs the backend's separate dependencies, including Jest.
+The root install prepares the Next.js application. The second install prepares the separately configured Express backend and its test dependencies.
 
-### Run the application
+### 2. Configure the backend environment
 
-Start the frontend:
+Create `server/.env` using `server/.env.example` as a starting point. Fill in the required values for your environment. Do not commit the real `.env` file.
 
-```bash
-npm run dev
-```
+See [Environment variables](#environment-variables) below.
 
-Start the backend in a separate terminal:
+### 3. Start MongoDB
+
+Start your local MongoDB instance or configure `MONGO_URI` to point to a database you are authorised to use.
+
+### 4. Run the backend
+
+In one terminal:
 
 ```bash
 npm run server
 ```
 
-### Run backend tests
+The Express server defaults to port `3000` unless `PORT` is configured. If you run the backend and frontend on the same port, resolve the conflict by configuring distinct ports and the frontend's API target as appropriate.
+
+### 5. Run the Next.js frontend
+
+In another terminal:
+
+```bash
+npm run dev
+```
+
+Next.js uses its default development port unless it is already occupied. Confirm the frontend's API base URL/configuration matches the backend address in your local setup.
+
+### 6. Seed demo data (optional)
+
+After configuring the database, you can run:
+
+```bash
+npm run seed
+```
+
+**Warning:** review the seed script before running it against any database containing data you need to preserve. Use a dedicated development database for demo data.
+
+---
+
+## Environment variables
+
+The backend reads environment configuration from `server/.env`. The committed `server/.env.example` currently documents `MONGO_URI`, `JWT_SECRET`, `PORT`, and `GEMINI_API_KEY`. Payment configuration also uses the variables below.
+
+| Variable | Purpose | Required when |
+|---|---|---|
+| `MONGO_URI` | MongoDB connection string | Required for a configured persistent database; production startup cannot use a local fallback |
+| `JWT_SECRET` | JWT signing secret | Required for secure deployments; never use a guessable default in production |
+| `PORT` | Express listening port | Optional; server defaults to 3000 |
+| `GEMINI_API_KEY` | Gemini API key | Required for the AI chat feature; other API routes can run without it |
+| `RAZORPAY_KEY_ID` | Razorpay API key ID | Required with the key secret for real Razorpay order/payment integration |
+| `RAZORPAY_KEY_SECRET` | Razorpay API secret | Required with the key ID for real payment integration and payment signature verification |
+| `RAZORPAY_WEBHOOK_SECRET` | Secret configured for Razorpay webhook signing | Required to verify incoming Razorpay webhook events |
+
+Use placeholders in documentation and a secret manager or deployment environment variables for actual credentials. Never commit API keys, database passwords, webhook secrets, or production credentials.
+
+---
+
+## Demo data
+
+The seeding script describes a demo catalogue of 20 Bengaluru stores and more than 200 grocery products. It also seeds related commerce data according to the script's implementation.
+
+- Use a separate development database for demo data.
+- Treat seeded stores/products as sample records, not independently verified live merchants.
+- Do not run seed scripts against a production database without reviewing their behaviour and confirming the intended effect.
+- External product images may depend on the image provider and network availability.
+
+---
+
+## Testing and QA
+
+The backend uses Jest and runs tests sequentially with `jest --runInBand`.
+
+### Run the backend tests
 
 From the repository root:
 
@@ -455,45 +405,97 @@ From the repository root:
 npm test
 ```
 
-Or run the equivalent backend command directly:
+Or from the backend directory:
 
 ```bash
 cd server
 npm test
 ```
 
-Both test commands execute the backend Jest suite. See [Testing and Quality Assurance](#testing-and-quality-assurance) for test inventory and status.
+The root `test` script delegates to the backend suite using `npm --prefix server test`. It does **not** run a separate frontend test suite.
 
-### Environment configuration
+### Test coverage areas
 
-Create the local environment variables required for the database, JWT authentication, Razorpay test credentials, and other application configuration.
+The current test files include backend tests relating to:
 
-**Never commit real secrets or production credentials.**
+- Authentication, roles, and protected routes.
+- Store and product behaviour and product model validation.
+- Cart, checkout, and order workflows.
+- Coupon and discount validation.
+- Inventory behaviour and reservation scenarios.
+- Payment order creation, signature validation, payment failures, and selected webhook cases.
+- Webhook raw-body signature validation and persistent event-ID deduplication.
+- AI service/tool behaviour, using mocked provider calls in tests where configured.
+- Input validation, error handling, and database-backed API workflows.
 
-Docker-based development is also supported through the project's Docker configuration.
+### Test inventory vs. passing results
+
+The feature branch README has recorded **220 Jest test declarations across 18 backend test files** and **217 scenarios** in [TEST_CASES.md](./TEST_CASES.md). The QA matrix records its last execution date and per-scenario status inside that file.
+
+These counts are inventory metrics, not code coverage and not proof that every test currently passes. A test declaration only proves that a test is defined. Re-run the suite against the current commit before reporting a fresh pass rate.
+
+The QA matrix includes manual, automated, and combined scenarios. Manual-only scenarios still require browser/user validation.
+
+### Webhook test scope
+
+The documented webhook tests cover missing signatures, invalid signatures, and repeated event IDs. Further valuable tests include concurrent duplicate deliveries, retry after processing failure, stale processing recovery, and failures between order updates and stock side effects.
+
+See [TEST_CASES.md](./TEST_CASES.md) for the detailed scenario matrix.
 
 ---
 
-## What I Learned Building KiranaWala
+## Deployment
 
-The most important engineering challenges were not the UI screens themselves. They were the boundaries where commerce systems become correctness-sensitive:
+The repository's documented hosting setup is:
 
-- preventing inventory overselling under concurrent requests
-- making payment state transitions safe under duplicate events
-- verifying payment signatures server-side
-- keeping client input separate from authoritative commerce state
-- recovering from inconsistent payment/order states
-- validating AI-generated shopping actions before changing application state
-- testing failure paths rather than only successful requests
-- validating the product against real local-store workflows
+| Component | Platform / service |
+|---|---|
+| Frontend | Vercel |
+| Backend | Render |
+| Database | MongoDB Atlas (when configured) |
+| Payment integration | Razorpay; use test credentials for development |
+| CI | GitHub Actions configuration in the repository |
+
+- **Live frontend:** https://kirana-wala-1nhp.vercel.app
+- **Backend URL:** https://kiranawala-api.onrender.com
+
+Configure backend environment variables in the deployment provider rather than committing secrets. Ensure the frontend points to the intended backend URL and that CORS settings match the deployed frontend.
+
+### Docker note
+
+The repository contains Docker configuration, but the current `docker-compose.yml` builds the frontend from `./public` using an Nginx image, while the primary frontend described here is the Next.js app under `src/`. Therefore, do not assume the existing compose file runs the complete current Next.js application without further configuration. Verify or update the Docker setup before relying on it for full-stack development or deployment.
 
 ---
 
-## Project Status
+## Known limitations and next steps
 
-**Completed and deployed.**
+The following are explicit boundaries to keep the project's claims accurate:
 
-KiranaWala is maintained as a portfolio project demonstrating full-stack product engineering, backend correctness, payment integration, AI-assisted workflows, testing, and real-world product validation.
+1. **No complete payment reconciliation worker:** divergence between Razorpay and application payment/order state is not automatically reconciled by a dedicated worker.
+2. **Webhook side effects are not one distributed transaction:** a crash between related writes can leave partial state, even when event IDs are deduplicated.
+3. **Multi-item inventory is not automatically transactionally atomic:** per-product conditional updates do not guarantee an all-or-nothing cart reservation.
+4. **Subscription automation needs separate verification:** subscription records and status management exist; a complete scheduled order-generation and fulfilment pipeline should not be claimed without verifying the worker/scheduler.
+5. **Frontend automated tests are not included in the root test command:** `npm test` runs the backend Jest suite.
+6. **Docker configuration needs alignment:** the compose frontend currently targets the static `public/` directory rather than the Next.js frontend.
+7. **Live merchant claims must be evidence-based:** seeded demo data and local workflow feedback should be described separately from independently verified active merchants.
+
+These limitations are useful engineering discussion points: they identify the difference between implemented workflows and stronger reliability guarantees.
+
+---
+
+## What this project demonstrates
+
+KiranaWala brings together several practical full-stack engineering concerns:
+
+- Designing a multi-role commerce application and REST API.
+- Modelling users, stores, products, carts, orders, inventory, and related domain records.
+- Enforcing backend validation and authorization boundaries.
+- Integrating payment-provider order creation and cryptographic signature checks.
+- Handling webhook retries with a persistent event ledger while documenting the remaining consistency gaps.
+- Designing inventory reservations and reasoning about concurrency and rollback.
+- Integrating a server-side LLM with bounded tool calling and read-only data access.
+- Maintaining automated backend tests and a structured manual QA matrix.
+- Evaluating product workflows against realistic neighbourhood-store scenarios.
 
 ---
 
@@ -506,4 +508,4 @@ KiranaWala is maintained as a portfolio project demonstrating full-stack product
 
 ---
 
-### Built for better local commerce.
+*Built to explore better digital commerce for neighbourhood grocery stores.*
