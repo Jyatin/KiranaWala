@@ -23,11 +23,11 @@ This document is the structured manual and integration test-case matrix for the 
 
 | Metric | Result |
 |---|---|
-| **Total Test Cases** | **210** |
-| **PASS** | **210** |
+| **Total Test Cases** | **217** |
+| **PASS** | **197** |
 | **FAIL** | **0** |
 | **BLOCKED** | **0** |
-| **NOT TESTED** | **0** |
+| **NOT TESTED** | **20** |
 | **NOT APPLICABLE** | **0** |
 | **Last Execution Date** | **2026-10-02** |
 | **Tested Build/Commit** | **Next.js 16.3.8 Turbopack Build (Clean 0 Errors)** |
@@ -468,3 +468,31 @@ This document is the structured manual and integration test-case matrix for the 
 
 ### Final Deployment Decision
 **STATUS: PASSED (DEPLOYMENT READY)**
+
+
+## 18. Product Model Validation — Newly Added Automated Tests
+
+These 20 cases are implemented in `server/__tests__/product.model.validation.test.js`. They are marked **NOT TESTED** in this matrix until the Jest suite is executed in a configured test environment.
+
+| ID | Scenario | Expected Result | Actual Result | Status | Type | Severity |
+|---|---|---|---|---|---|---|
+| TC-PRODMODEL-001 | Valid product payload | Model validates without errors | Awaiting Jest execution | NOT TESTED | Automated | High |
+| TC-PRODMODEL-002 | Missing product name | Name validation error is present | Awaiting Jest execution | NOT TESTED | Automated | High |
+| TC-PRODMODEL-003 | Missing product price | Price validation error is present | Awaiting Jest execution | NOT TESTED | High |
+| TC-PRODMODEL-004 | Missing product description | Description validation error is present | Awaiting Jest execution | NOT TESTED | Medium |
+| TC-PRODMODEL-005 | Missing product image | Image validation error is present | Awaiting Jest execution | NOT TESTED | Medium |
+| TC-PRODMODEL-006 | Missing store reference | Store validation error is present | Awaiting Jest execution | NOT TESTED | High |
+| TC-PRODMODEL-007 | Default category | Category defaults to General | Awaiting Jest execution | NOT TESTED | Low |
+| TC-PRODMODEL-008 | Default brand | Brand defaults to Local Brand | Awaiting Jest execution | NOT TESTED | Low |
+| TC-PRODMODEL-009 | Default unit | Unit defaults to 1 unit | Awaiting Jest execution | NOT TESTED | Low |
+| TC-PRODMODEL-010 | Default stock | Stock defaults to 20 | Awaiting Jest execution | NOT TESTED | High |
+| TC-PRODMODEL-011 | Default available stock | Available stock defaults to 20 | Awaiting Jest execution | NOT TESTED | High |
+| TC-PRODMODEL-012 | Default reserved stock | Reserved stock defaults to zero | Awaiting Jest execution | NOT TESTED | Medium |
+| TC-PRODMODEL-013 | Default sold stock | Sold stock defaults to zero | Awaiting Jest execution | NOT TESTED | Medium |
+| TC-PRODMODEL-014 | Default incoming stock | Incoming stock defaults to zero | Awaiting Jest execution | NOT TESTED | Medium |
+| TC-PRODMODEL-015 | Default damaged stock | Damaged stock defaults to zero | Awaiting Jest execution | NOT TESTED | Medium |
+| TC-PRODMODEL-016 | Default reorder level | Reorder level defaults to five | Awaiting Jest execution | NOT TESTED | Medium |
+| TC-PRODMODEL-017 | Default safety stock | Safety stock defaults to three | Awaiting Jest execution | NOT TESTED | Medium |
+| TC-PRODMODEL-018 | Default availability | Product availability defaults to true | Awaiting Jest execution | NOT TESTED | High |
+| TC-PRODMODEL-019 | Default rating values | Rating is 4.8 and rating count is 12 | Awaiting Jest execution | NOT TESTED | Low |
+| TC-PRODMODEL-020 | Default tags | Tags default to an empty array | Awaiting Jest execution | NOT TESTED | Low |
