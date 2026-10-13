@@ -273,9 +273,24 @@ The existing suite contains tests for backend behaviour across:
 - **Coupons and discounts:** coupon eligibility and discount validation.
 - **Inventory and orders:** stock-related behaviour, order creation, and order lifecycle.
 - **Payments:** payment-order creation, amount validation, Razorpay signature verification, invalid signatures, and payment failures.
-- **Webhook reliability:** webhook handling and idempotency scenarios.
+- **Payment webhooks:** the route handles selected payment and refund events; durable event deduplication and reconciliation are not yet verified (see below).
 - **Validation and integration:** invalid inputs, error handling, and database-backed API workflows.
 - **AI-assisted shopping:** AI-related shopping behaviour covered by the current tests.
+
+### Payment webhook behaviour and verification status
+
+The current webhook route contains status checks intended to avoid repeating some payment and refund transitions. However, the implementation does **not** persist Razorpay event IDs in a dedicated event ledger, so durable duplicate-event deduplication has not been established. The route also does not implement a scheduled reconciliation worker that compares local payment/order state with Razorpay's authoritative state.
+
+The following implementation gaps must be addressed before describing these as production-grade capabilities:
+
+- **Signature enforcement:** verification is conditional. If the webhook secret or signature header is absent, the current handler does not reject the request.
+- **Retry behaviour:** the error path returns HTTP 200 even when processing fails, potentially acknowledging an event that was not processed successfully.
+- **Concurrent deliveries:** status checks alone do not guarantee exactly-once side effects when duplicate events arrive concurrently.
+- **Refund side effects:** refund handling updates order state and restores stock, but this is not a reconciliation workflow.
+
+Until these gaps are fixed and tested, describe webhook handling as implemented but **idempotency and reconciliation as unverified**. A robust fix should require a valid signature for every webhook, persist event IDs with a unique database constraint, make state transitions and side effects safe under retries/concurrency, return a retryable non-2xx response on transient processing failures, and add a reconciliation job that queries Razorpay and repairs mismatched local state.
+
+Tests should cover duplicate and concurrent deliveries, missing/invalid signatures, database failures, repeated refund events, and reconciliation outcomes.
 
 ### Current test inventory and QA status
 
