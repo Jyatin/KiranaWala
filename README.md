@@ -237,7 +237,7 @@ Invalid or tampered payment signatures are rejected. Razorpay test/sandbox crede
 
 ## Testing
 
-KiranaWala includes an automated backend/API test suite covering authentication, authorization, commerce workflows, inventory, orders, coupons, payment processing, validation, and failure paths.
+KiranaWala has **200 test declarations across 17 Jest test files** in the backend test directory, covering authentication, authorization, commerce workflows, inventory, orders, coupons, payment processing, AI-assisted shopping, validation, and failure paths. This is a source-level count of `test()` / `it()` declarations; it does **not** mean all 200 tests were freshly executed or passed in this update.
 
 ### Automated coverage areas
 
@@ -260,7 +260,7 @@ KiranaWala includes an automated backend/API test suite covering authentication,
 
 The commerce-critical paths include tests for checkout and failure scenarios, including inventory contention and payment-state recovery. The exact guarantees depend on the scenarios covered by the automated suite and the underlying implementation.
 
-The repository's `TEST_CASES.md` also contains manual and combined manual/automated QA scenarios. Its total QA-case count is **not** the automated test count. This README intentionally does not state a numeric automated-test total until that number is verified directly from the test suite and its latest execution results.
+The repository's `TEST_CASES.md` separately reports **210 QA scenarios** across manual, automated, and combined execution types (last recorded execution: October 2, 2026). That QA-matrix total is different from the 200 Jest test declarations counted in the backend test files. The latest pass/fail status of all Jest tests has not been re-run as part of this README update.
 
 > **Testing note:** Automated test coverage is not the same as 100% code coverage. See [TEST_CASES.md](./TEST_CASES.md) for the broader QA matrix and its recorded execution status.
 ---
