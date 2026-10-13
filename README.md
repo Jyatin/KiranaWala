@@ -273,7 +273,7 @@ The existing suite contains tests for backend behaviour across:
 - **Coupons and discounts:** coupon eligibility and discount validation.
 - **Inventory and orders:** stock-related behaviour, order creation, and order lifecycle.
 - **Payments:** payment-order creation, amount validation, Razorpay signature verification, invalid signatures, and payment failures.
-- **Payment webhooks:** the route handles selected payment and refund events; durable event deduplication and reconciliation are not yet verified (see below).
+- **Payment webhooks:** selected payment/refund events, raw-body HMAC signature checks, and persistent event-ID deduplication; automated reconciliation remains unimplemented (see below).
 - **Validation and integration:** invalid inputs, error handling, and database-backed API workflows.
 - **AI-assisted shopping:** AI-related shopping behaviour covered by the current tests.
 
