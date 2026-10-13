@@ -237,7 +237,7 @@ Invalid or tampered payment signatures are rejected. Razorpay test/sandbox crede
 
 ## Testing
 
-KiranaWala has **200 test declarations across 17 Jest test files** in the backend test directory, covering authentication, authorization, commerce workflows, inventory, orders, coupons, payment processing, AI-assisted shopping, validation, and failure paths. This is a source-level count of `test()` / `it()` declarations; it does **not** mean all 200 tests were freshly executed or passed in this update.
+KiranaWala has **220 test declarations across 18 Jest test files** in the backend test directory, including 20 newly added product-model validation tests. Coverage areas include authentication, authorization, commerce workflows, inventory, orders, coupons, payment processing, AI-assisted shopping, validation, and failure paths. This is a source-level count of `test()` / `it()` declarations; the 20 newly added tests are **not yet executed**, so this change does not claim they pass.
 
 ### Automated coverage areas
 
@@ -260,7 +260,7 @@ KiranaWala has **200 test declarations across 17 Jest test files** in the backen
 
 The commerce-critical paths include tests for checkout and failure scenarios, including inventory contention and payment-state recovery. The exact guarantees depend on the scenarios covered by the automated suite and the underlying implementation.
 
-The repository's `TEST_CASES.md` separately reports **210 QA scenarios** across manual, automated, and combined execution types (last recorded execution: October 2, 2026). That QA-matrix total is different from the 200 Jest test declarations counted in the backend test files. The latest pass/fail status of all Jest tests has not been re-run as part of this README update.
+The repository's `TEST_CASES.md` currently lists **217 QA scenarios**: 197 previously recorded as passing and 20 new product-model scenarios marked **NOT TESTED** pending execution. The matrix now contains **47 scenarios classified as Automated-only** (27 existing + 20 newly documented) and 66 classified as Both. The last recorded execution for the previously tested matrix is October 2, 2026; the newly added tests still require a fresh Jest run.
 
 > **Testing note:** Automated test coverage is not the same as 100% code coverage. See [TEST_CASES.md](./TEST_CASES.md) for the broader QA matrix and its recorded execution status.
 ---
