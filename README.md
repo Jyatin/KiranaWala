@@ -237,37 +237,32 @@ Invalid or tampered payment signatures are rejected. Razorpay test/sandbox crede
 
 ## Testing
 
-KiranaWala has **100+ automated test cases** covering authentication, authorization, commerce workflows, inventory, orders, coupons, payment processing, validation, and failure paths.
+KiranaWala includes an automated backend/API test suite covering authentication, authorization, commerce workflows, inventory, orders, coupons, payment processing, validation, and failure paths.
 
 ### Automated coverage areas
 
-- Customer authentication
-- Store-owner authentication
-- Role-based authorization
-- Protected API routes
-- Store operations
-- Product CRUD and validation
-- Cart behaviour
-- Coupon validation
+- Customer and store-owner authentication
+- Role-based authorization and protected API routes
+- Store operations and product validation
+- Cart behaviour and server-side price validation
+- Coupon eligibility and discount validation
 - Inventory and stock behaviour
 - Order creation and lifecycle
-- Payment order creation
+- Payment order creation and amount validation
 - Razorpay signature verification
 - Invalid/tampered payment signatures
-- Payment failures
-- Webhook/idempotency behaviour
-- Backend validation
+- Payment failure handling
+- Webhook handling and idempotency scenarios
+- Backend validation and error handling
 - Database-backed API workflows
-- Error handling
 
 ### Concurrency and reliability validation
 
-The commerce-critical paths include tests for concurrent checkout and failure scenarios, including inventory contention and payment-state recovery.
+The commerce-critical paths include tests for checkout and failure scenarios, including inventory contention and payment-state recovery. The exact guarantees depend on the scenarios covered by the automated suite and the underlying implementation.
 
-The goal is not merely to demonstrate that the happy path works, but to verify that critical state transitions remain correct when requests are duplicated, concurrent, or interrupted.
+The repository's `TEST_CASES.md` also contains manual and combined manual/automated QA scenarios. Its total QA-case count is **not** the automated test count. This README intentionally does not state a numeric automated-test total until that number is verified directly from the test suite and its latest execution results.
 
-> **Testing note:** 100+ refers to automated test cases executed for the completed project. It is not a claim of 100% code coverage.
-
+> **Testing note:** Automated test coverage is not the same as 100% code coverage. See [TEST_CASES.md](./TEST_CASES.md) for the broader QA matrix and its recorded execution status.
 ---
 
 ## Real-World Validation
