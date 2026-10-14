@@ -71,13 +71,9 @@ The repository's seed script is designed to populate **20 Bengaluru demo stores 
 - Inventory updates and order fulfilment workflows.
 - Server-side role and ownership checks for protected operations.
 
-### Delivery-partner workflow and lifecycle
+### Delivery-partner workflow
 
-The **Order** model records the customer-facing commerce/fulfilment status. The store-owner route allows transitions through states such as `placed → confirmed → packing → ready`; delivery assignment and progress can then move the order through `assigned → picked_up → out_for_delivery → delivered`. Some transitions are also allowed from `processing`, and terminal states include `delivered`, `completed`, and `cancelled`. The exact allowed transitions are enforced by `ALLOWED_ORDER_TRANSITIONS` in `server/routes/storeRoutes.js` and `VALID_DELIVERY_TRANSITIONS` in `server/routes/deliveryRoutes.js`; they are not one universal linear state machine.
-
-The separate **Delivery** model represents the delivery task itself. Its schema defines `unassigned`, `assigned`, `accepted`, `heading_to_store`, `arrived_at_store`, `picked_up`, `out_for_delivery`, `delivered`, `failed`, and `cancelled`. These are conceptually distinct from the Order status, even though the delivery status route attempts to mirror some status updates onto both records. The delivery model also carries partner, pickup/drop-off address, distance/ETA, earning, OTP, and location fields.
-
-Delivery partners can list ready/unassigned orders, claim an eligible order, and progress assigned work. The order route checks assignment for delivery-partner callers and validates an OTP on the delivered transition. **Integration caveat:** the claim upsert currently writes fields such as `runner`, `dropoffAddress`, and `earnings`, while the Delivery schema expects `partner`, `dropAddress`, and `earningAmount`; the status update also assumes the Delivery record exists. Therefore the Order lifecycle is more directly represented than a fully functioning, synchronised Delivery-model lifecycle. Treat this as workflow code requiring route/model alignment and end-to-end tests—not proof of live courier dispatch, route optimisation, or continuous GPS tracking.
+Store and delivery workflows move orders through preparation and delivery states such as `packing`, `ready`, `assigned`, `picked_up`, `out_for_delivery`, and `delivered`. The application defines separate Order and Delivery status models; synchronization between them still needs end-to-end verification. See [Engineering decisions and limitations](#engineering-decisions-and-limitations) for the lifecycle details and current integration gap.
 
 ### Payments and promotions
 
@@ -103,13 +99,13 @@ The implementation is split into four layers:
 
 Tool inputs are validated before database access: product/store IDs are checked, coordinates must be within latitude/longitude bounds, product search results are capped at 20 (default 10), and nearby-store radius defaults to 8 km with a 50 km maximum. The tool layer projects safe product/store fields instead of exposing raw MongoDB documents. These controls reduce the model's authority, but do not replace normal backend validation for cart, checkout, pricing, inventory, or authorization.
 
-### Customer feedback, notifications, and subscriptions — status and boundaries
+### Customer feedback, notifications, and subscriptions
 
-- **Purchase-aware customer feedback:** the review route accepts a 1–5 star rating and comment for a product and/or store, attempts to verify the customer has a qualifying prior order, and calculates an average product rating. However, the route writes fields such as `customer`, `title`, and `status`, while the Mongoose model requires `user`, `userName`, and `order` and uses `isApproved`. This mismatch means the intended purchase-aware rating/comment flow needs contract alignment and tests before it can be called operational end-to-end.
-- **In-app notifications:** authenticated endpoints retrieve the latest 30 notifications for the signed-in user, return an unread count, mark one notification as read, and mark all of that user's notifications as read. These are retrieval and read/unread management features; the routes do not implement push, SMS, email, or WhatsApp delivery.
-- **Recurring-order configuration:** customers can list, create, pause, resume, or cancel subscription records in the intended API. The model captures frequency (`daily`, `alternate_days`, `weekly`, `monthly`), preferred time slot, delivery address, items, and next delivery date. The current create handler omits schema-required `title` and item `name` fields and uses mismatched names such as `deliverySlot`; no verified scheduler/order-generation worker is present. Describe this as recurring-order configuration only—**automatic recurring order creation and fulfilment are not implemented/verified end-to-end**.
+- **Customer feedback:** review routes support the intended 1–5 star product/store ratings and comments, with purchase-aware verification; the route/model contract still needs alignment before end-to-end operation is verified.
+- **In-app notifications:** authenticated users can retrieve recent notifications, view an unread count, and mark notifications read individually or all at once.
+- **Recurring-order configuration:** subscription routes describe frequency, items, delivery preferences, and subscription status. Automatic recurring order creation and fulfilment are not verified.
 
-These modules are included in the architecture, but route presence alone does not establish an operational end-to-end feature. The known route/model mismatches are documented under [Known limitations](#known-limitations-and-next-steps).
+See [Engineering decisions and limitations](#engineering-decisions-and-limitations) for implementation details and known contract gaps.
 
 ### Location-aware discovery
 
@@ -521,21 +517,16 @@ With the current Compose port mappings, open the frontend at `http://localhost:3
 
 ## Known limitations and next steps
 
-The following are explicit boundaries to keep the project's claims accurate:
+The main reliability and integration work remaining is summarised below. The implementation details and evidence boundaries are documented in [Engineering decisions and limitations](#engineering-decisions-and-limitations).
 
-1. **No complete payment reconciliation worker:** divergence between Razorpay and application payment/order state is not automatically reconciled by a dedicated worker.
-2. **Webhook side effects are not one distributed transaction:** a crash between related writes can leave partial state, even when event IDs are deduplicated.
-3. **Multi-item inventory is not automatically transactionally atomic:** per-product conditional updates do not guarantee an all-or-nothing cart reservation.
-4. **Review route/schema contract needs alignment:** review creation and listing handlers do not currently match the review schema's required fields and approval field.
-5. **Subscription route/schema contract needs alignment:** the creation handler does not currently populate all schema-required fields and uses fields not declared in the schema.
-6. **Delivery route/model contract needs alignment:** the delivery claim upsert uses field names/shapes that differ from the Delivery model; order status and delivery-task status should be reconciled and tested independently.
-7. **Reservation expiry scheduling is not wired:** `cleanupExpiredReservations()` defines cleanup of pending-payment orders older than 15 minutes, but no scheduler invocation is wired in `server/server.js`; expiry is not proven to run automatically.
-8. **Subscription automation needs separate verification:** a complete scheduled order-generation and fulfilment pipeline should not be claimed without verifying the worker/scheduler.
-9. **Frontend automated tests are not included in the root test command:** `npm test` runs the backend Jest suite.
-10. **Docker validation is pending:** Compose now targets the current Next.js frontend, but image build, container startup, browser smoke test, and local frontend-to-API connectivity have not yet been verified in this environment.
-11. **Live merchant claims must be evidence-based:** seeded demo data and local workflow feedback should be described separately from independently verified active merchants.
+1. **Inventory consistency:** multi-item reservations are not a single atomic transaction, and expiry cleanup is not automatically scheduled.
+2. **Payment recovery:** webhook deduplication does not guarantee exactly-once side effects; automated payment reconciliation remains future work.
+3. **Cross-layer contracts:** review, subscription, and delivery handlers have schema mismatches that need alignment and route-level integration tests.
+4. **Frontend verification:** the root test command runs backend Jest tests; it does not run a separate frontend test suite.
+5. **Docker verification:** image build, container startup, browser smoke test, and frontend-to-API connectivity still need successful validation.
+6. **Operational claims:** seeded stores are demo records, not independently verified active merchants; scheduled recurring fulfilment and automatic reservation expiry should not be claimed without working, tested workers.
 
-These limitations are useful engineering discussion points: they identify the difference between implemented workflows and stronger reliability guarantees.
+These limitations are explicit engineering follow-ups, not evidence that every affected route has been reproduced failing in a runtime test.
 
 ---
 
