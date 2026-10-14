@@ -1,0 +1,34 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, "security/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  security-regression-tests:
+    name: Security regression tests (Jest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Test JWT secret enforcement and Razorpay webhook signatures
+        run: npm test -- --runInBand tests/authMiddleware.test.js tests/paymentWebhook.test.js

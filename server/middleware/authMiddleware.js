@@ -16,10 +16,17 @@ const authenticateToken = (req, res, next) => {
     return res.status(401).json({ message: "Authentication required" });
   }
 
-  const token = authHeader.split(" ")[1];
-  const secret = process.env.JWT_SECRET || "your_jwt_secret";
+  const token = authHeader.slice(7).trim();
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    console.error("JWT_SECRET is not configured");
+    return res.status(500).json({ message: "Authentication is not configured" });
+  }
+  if (!token) {
+    return res.status(401).json({ message: "Authentication required" });
+  }
 
-  jwt.verify(token, secret, (err, decoded) => {
+  jwt.verify(token, secret, { algorithms: ["HS256"] }, (err, decoded) => {
     if (err) {
       return res.status(401).json({ message: "Invalid or expired token" });
     }

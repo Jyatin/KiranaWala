@@ -47,7 +47,11 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid password" });
     }
 
-    const secret = process.env.JWT_SECRET || "your_jwt_secret";
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      console.error("JWT_SECRET is not configured");
+      return res.status(500).json({ message: "Authentication is not configured" });
+    }
     const token = jwt.sign(
       { userId: user._id, id: user._id, role: user.role, email: user.email },
       secret,
