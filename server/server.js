@@ -25,7 +25,14 @@ const app = express();
 // =====================================================
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buffer) => {
+    // Preserve the exact bytes Razorpay signed before JSON parsing.
+    if (req.originalUrl.split("?")[0] === "/api/payments/webhook") {
+      req.rawBody = Buffer.from(buffer);
+    }
+  },
+}));
 
 // Serve public files
 app.use(express.static(path.join(__dirname, "../public")));
