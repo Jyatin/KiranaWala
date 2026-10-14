@@ -61,6 +61,7 @@ The repository's seed script is designed to populate **20 Bengaluru demo stores 
 - Cart and checkout workflows with server-side validation.
 - Coupon discovery and validation for eligible orders.
 - Customer order history, status tracking, and dashboard views.
+- Product/store feedback routes for 1–5 star ratings and comments; the route attempts to verify prior purchases/orders and recalculates product average ratings. The current route/model field mismatch means this is not yet verified end-to-end.
 - Responsive layouts and loading, empty, and error states documented in the QA matrix.
 
 ### Store-owner operations
@@ -70,14 +71,13 @@ The repository's seed script is designed to populate **20 Bengaluru demo stores 
 - Inventory updates and order fulfilment workflows.
 - Server-side role and ownership checks for protected operations.
 
-### Delivery-partner workflow
+### Delivery-partner workflow and lifecycle
 
-- View orders available for pickup and orders assigned to the logged-in delivery partner.
-- Claim eligible orders that are ready and unassigned.
-- Progress orders through supported fulfilment states.
-- Validate a delivery OTP when the delivery route transitions an order to delivered.
+The **Order** model records the customer-facing commerce/fulfilment status. The store-owner route allows transitions through states such as `placed → confirmed → packing → ready`; delivery assignment and progress can then move the order through `assigned → picked_up → out_for_delivery → delivered`. Some transitions are also allowed from `processing`, and terminal states include `delivered`, `completed`, and `cancelled`. The exact allowed transitions are enforced by `ALLOWED_ORDER_TRANSITIONS` in `server/routes/storeRoutes.js` and `VALID_DELIVERY_TRANSITIONS` in `server/routes/deliveryRoutes.js`; they are not one universal linear state machine.
 
-The delivery routes and order model contain workflow primitives, but the delivery route's upsert payload should be checked against the separate Delivery model's field names and nested address schema. Treat delivery assignment as an integration area requiring route/model alignment and end-to-end tests—not proof of live courier dispatch, route optimisation, or GPS navigation.
+The separate **Delivery** model represents the delivery task itself. Its schema defines `unassigned`, `assigned`, `accepted`, `heading_to_store`, `arrived_at_store`, `picked_up`, `out_for_delivery`, `delivered`, `failed`, and `cancelled`. These are conceptually distinct from the Order status, even though the delivery status route attempts to mirror some status updates onto both records. The delivery model also carries partner, pickup/drop-off address, distance/ETA, earning, OTP, and location fields.
+
+Delivery partners can list ready/unassigned orders, claim an eligible order, and progress assigned work. The order route checks assignment for delivery-partner callers and validates an OTP on the delivered transition. **Integration caveat:** the claim upsert currently writes fields such as `runner`, `dropoffAddress`, and `earnings`, while the Delivery schema expects `partner`, `dropAddress`, and `earningAmount`; the status update also assumes the Delivery record exists. Therefore the Order lifecycle is more directly represented than a fully functioning, synchronised Delivery-model lifecycle. Treat this as workflow code requiring route/model alignment and end-to-end tests—not proof of live courier dispatch, route optimisation, or continuous GPS tracking.
 
 ### Payments and promotions
 
@@ -103,11 +103,11 @@ The implementation is split into four layers:
 
 Tool inputs are validated before database access: product/store IDs are checked, coordinates must be within latitude/longitude bounds, product search results are capped at 20 (default 10), and nearby-store radius defaults to 8 km with a 50 km maximum. The tool layer projects safe product/store fields instead of exposing raw MongoDB documents. These controls reduce the model's authority, but do not replace normal backend validation for cart, checkout, pricing, inventory, or authorization.
 
-### Reviews, notifications, and subscriptions — status and boundaries
+### Customer feedback, notifications, and subscriptions — status and boundaries
 
-- **Reviews:** endpoints exist for review submission and product/store review listing, including a purchase-verification check and product-rating recalculation in the route. However, route handlers and the Mongoose model disagree on required field names and approval state. Treat this as implemented route logic with a known integration defect, not a verified working review flow.
-- **In-app notifications:** authenticated endpoints list notifications, return an unread count, mark a notification read, and mark all notifications read. No push, SMS, email, or WhatsApp delivery provider is implemented by these routes.
-- **Recurring subscriptions:** endpoints list, create, and pause/resume/cancel subscription records with frequency and preferred delivery data in the model. The current create handler omits schema-required values and uses fields that do not match the model. A verified scheduler/order-generation worker is also not present, so automatic recurring order fulfilment must not be claimed.
+- **Purchase-aware customer feedback:** the review route accepts a 1–5 star rating and comment for a product and/or store, attempts to verify the customer has a qualifying prior order, and calculates an average product rating. However, the route writes fields such as `customer`, `title`, and `status`, while the Mongoose model requires `user`, `userName`, and `order` and uses `isApproved`. This mismatch means the intended purchase-aware rating/comment flow needs contract alignment and tests before it can be called operational end-to-end.
+- **In-app notifications:** authenticated endpoints retrieve the latest 30 notifications for the signed-in user, return an unread count, mark one notification as read, and mark all of that user's notifications as read. These are retrieval and read/unread management features; the routes do not implement push, SMS, email, or WhatsApp delivery.
+- **Recurring-order configuration:** customers can list, create, pause, resume, or cancel subscription records in the intended API. The model captures frequency (`daily`, `alternate_days`, `weekly`, `monthly`), preferred time slot, delivery address, items, and next delivery date. The current create handler omits schema-required `title` and item `name` fields and uses mismatched names such as `deliverySlot`; no verified scheduler/order-generation worker is present. Describe this as recurring-order configuration only—**automatic recurring order creation and fulfilment are not implemented/verified end-to-end**.
 
 These modules are included in the architecture, but route presence alone does not establish an operational end-to-end feature. The known route/model mismatches are documented under [Known limitations](#known-limitations-and-next-steps).
 
@@ -192,17 +192,25 @@ Exact transition rules are implemented in the route handlers. This workflow desc
 
 ## Engineering decisions and limitations
 
-### Inventory concurrency: per-product atomicity vs. cart-level atomicity
+### Inventory reservations, expiry, and concurrency
 
-Inventory correctness has two different levels.
+`server/services/inventoryService.js` implements temporary stock reservations with a default **15-minute TTL**. `reserveStock()` conditionally updates each product document only when the product is available and `availableStock >= requested quantity`; it decrements `availableStock` and increments `reservedStock`. The returned `expiresAt` timestamp represents the reservation deadline.
 
-- **Per-product atomicity:** a conditional stock update checks availability and decrements a product's quantity in one database operation. This helps prevent competing requests from selling the same remaining unit.
-- **Multi-product checkout:** a cart can touch several product documents. Atomic updates to each document do not, by themselves, make the complete cart operation all-or-nothing.
-- **Compensating rollback:** restoring stock after a later item fails can itself fail or be interrupted. A compensating update is not equivalent to a transaction.
-- **Reservations and expiry:** the inventory service uses temporary reservations with a default 15-minute TTL. Expiry/release behaviour does not independently guarantee transaction-level consistency across every product in a cart.
-- **Verification boundary:** tests demonstrate only the scenarios they exercise; they do not prove every possible interleaving or crash-recovery path.
+- **Checkout/payment succeeds:** `commitReservation()` moves reserved quantity out of `reservedStock` and increments sold/total stock counters.
+- **Checkout fails part-way through reservation:** `reserveStock()` attempts compensating updates for products already reserved in that batch, returning those quantities to `availableStock` and decrementing `reservedStock`.
+- **Payment fails or reservation is abandoned:** `releaseReservation()` restores available quantity and removes it from reserved stock.
+- **Expiry cleanup:** `cleanupExpiredReservations()` searches for `pending_payment` orders older than 15 minutes, marks them `payment_failed`, appends a timeline note, saves the order, and then calls `releaseReservation()` for its items.
 
-Do not claim that every multi-item checkout has a guaranteed atomic commit/rollback unless the relevant database transaction or complete recovery design is established and tested.
+**Important scheduler caveat:** the cleanup function exists in the inventory service, but it is not wired to a scheduler/interval in `server/server.js` in the current branch. Therefore the code defines the expiry/release operation, but automatic periodic expiry should not be claimed until a worker or scheduler invokes it and that execution is tested. The routine also saves the failed order before releasing stock, so interruption between those steps can leave stock reserved unless a retry/reconciliation path handles it.
+
+### Per-product atomicity is not cart-level atomicity
+
+- **Per-product atomicity:** the conditional stock update checks availability and adjusts one product in a single database operation, helping prevent two requests from reserving the same remaining units.
+- **Multi-product checkout:** a cart may touch several product documents. Atomic updates to each document do not make the entire cart all-or-nothing.
+- **Compensating rollback:** restoring stock after a later item fails can itself fail or be interrupted. Compensation is not equivalent to a multi-document database transaction.
+- **Verification boundary:** tests cover only the scenarios they exercise; they do not prove every possible interleaving or crash-recovery path.
+
+Do not claim a guaranteed atomic commit/rollback for multi-item checkout unless a database transaction or complete recovery design is implemented and tested.
 
 ### Payment webhook idempotency
 
@@ -520,11 +528,12 @@ The following are explicit boundaries to keep the project's claims accurate:
 3. **Multi-item inventory is not automatically transactionally atomic:** per-product conditional updates do not guarantee an all-or-nothing cart reservation.
 4. **Review route/schema contract needs alignment:** review creation and listing handlers do not currently match the review schema's required fields and approval field.
 5. **Subscription route/schema contract needs alignment:** the creation handler does not currently populate all schema-required fields and uses fields not declared in the schema.
-6. **Delivery route/model contract needs alignment:** the delivery claim upsert uses field names/shapes that differ from the Delivery model.
-7. **Subscription automation needs separate verification:** a complete scheduled order-generation and fulfilment pipeline should not be claimed without verifying the worker/scheduler.
-8. **Frontend automated tests are not included in the root test command:** `npm test` runs the backend Jest suite.
-9. **Docker validation is pending:** Compose now targets the current Next.js frontend, but image build, container startup, browser smoke test, and local frontend-to-API connectivity have not yet been verified in this environment.
-10. **Live merchant claims must be evidence-based:** seeded demo data and local workflow feedback should be described separately from independently verified active merchants.
+6. **Delivery route/model contract needs alignment:** the delivery claim upsert uses field names/shapes that differ from the Delivery model; order status and delivery-task status should be reconciled and tested independently.
+7. **Reservation expiry scheduling is not wired:** `cleanupExpiredReservations()` defines cleanup of pending-payment orders older than 15 minutes, but no scheduler invocation is wired in `server/server.js`; expiry is not proven to run automatically.
+8. **Subscription automation needs separate verification:** a complete scheduled order-generation and fulfilment pipeline should not be claimed without verifying the worker/scheduler.
+9. **Frontend automated tests are not included in the root test command:** `npm test` runs the backend Jest suite.
+10. **Docker validation is pending:** Compose now targets the current Next.js frontend, but image build, container startup, browser smoke test, and local frontend-to-API connectivity have not yet been verified in this environment.
+11. **Live merchant claims must be evidence-based:** seeded demo data and local workflow feedback should be described separately from independently verified active merchants.
 
 These limitations are useful engineering discussion points: they identify the difference between implemented workflows and stronger reliability guarantees.
 
