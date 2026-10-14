@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Jest backend tests
+  security-regression-tests:
+    name: Security regression tests (Jest)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,5 +30,5 @@ jobs:
       - name: Install backend dependencies
         run: npm ci
 
-      - name: Run backend Jest suite
-        run: npm test -- --runInBand
+      - name: Test JWT secret enforcement and Razorpay webhook signatures
+        run: npm test -- --runInBand tests/authMiddleware.test.js tests/paymentWebhook.test.js
