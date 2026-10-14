@@ -107,35 +107,35 @@ router.post("/verify", authenticateToken, async (req, res) => {
 // Idempotent Razorpay Webhook Handler.
 // Handles: payment.captured, payment.failed, refund.created, refund.processed
 // =====================================================
-router.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+router.post("/webhook", async (req, res) => {
   try {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    const signature = req.headers["x-razorpay-signature"];
+    const signature = req.get("x-razorpay-signature");
+    const rawBody = req.rawBody;
 
-    // Parse body — handle both raw buffer and already-parsed JSON
-    let body;
-    if (Buffer.isBuffer(req.body)) {
-      body = JSON.parse(req.body.toString("utf8"));
-    } else {
-      body = req.body;
+    if (!webhookSecret) {
+      console.error("[Webhook] RAZORPAY_WEBHOOK_SECRET is not configured");
+      return res.status(503).json({ success: false, message: "Webhook verification is unavailable" });
+    }
+    if (!signature || !rawBody || !Buffer.isBuffer(rawBody)) {
+      return res.status(400).json({ success: false, message: "Missing webhook signature or raw body" });
+    }
+    if (!/^[a-f0-9]{64}$/i.test(signature)) {
+      return res.status(400).json({ success: false, message: "Invalid webhook signature" });
     }
 
-    // Validate webhook signature if secret is configured
-    if (webhookSecret && signature) {
-      const rawBody = Buffer.isBuffer(req.body)
-        ? req.body.toString("utf8")
-        : JSON.stringify(req.body);
-      const expectedSig = crypto
-        .createHmac("sha256", webhookSecret)
-        .update(rawBody)
-        .digest("hex");
+    const expectedSig = crypto.createHmac("sha256", webhookSecret).update(rawBody).digest();
+    const receivedSig = Buffer.from(signature, "hex");
+    if (receivedSig.length !== expectedSig.length || !crypto.timingSafeEqual(expectedSig, receivedSig)) {
+      console.error("[Webhook] Invalid signature");
+      return res.status(401).json({ success: false, message: "Invalid webhook signature" });
+    }
 
-      if (expectedSig !== signature) {
-        console.error("[Webhook] Invalid signature");
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid webhook signature" });
-      }
+    let body;
+    try {
+      body = JSON.parse(rawBody.toString("utf8"));
+    } catch {
+      return res.status(400).json({ success: false, message: "Invalid webhook JSON" });
     }
 
     const event = body.event;
@@ -244,8 +244,7 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
     res.json({ status: "ok" });
   } catch (err) {
     console.error("[Webhook] processing error:", err);
-    // Still return 200 to prevent Razorpay from retrying indefinitely
-    res.status(200).json({ status: "error", message: err.message });
+    res.status(500).json({ status: "error", message: "Webhook processing failed" });
   }
 });
 
