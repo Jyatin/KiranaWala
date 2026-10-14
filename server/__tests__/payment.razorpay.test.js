@@ -12,6 +12,7 @@ const customerRoutes = require("../routes/customerRoutes");
 const paymentRoutes = require("../routes/paymentRoutes");
 
 const app = express();
+app.use("/api/payments/webhook", express.raw({ type: "application/json" }));
 app.use(express.json());
 app.use("/api/customer", customerRoutes);
 app.use("/api/payments", paymentRoutes);
@@ -457,4 +458,36 @@ describe("Razorpay Payment Integration", () => {
       expect(prod.soldStock).toBe(2);
     });
   });
+  describe("Webhook signature enforcement and durable event deduplication", () => {
+    const secret = "test_webhook_secret";
+    let previousSecret;
+    beforeEach(() => { previousSecret = process.env.RAZORPAY_WEBHOOK_SECRET; process.env.RAZORPAY_WEBHOOK_SECRET = secret; });
+    afterEach(() => { if (previousSecret === undefined) delete process.env.RAZORPAY_WEBHOOK_SECRET; else process.env.RAZORPAY_WEBHOOK_SECRET = previousSecret; });
+
+    it("rejects a missing signature", async () => {
+      const payload = JSON.stringify({ event: "payment.authorized", payload: {} });
+      const res = await request(app).post("/api/payments/webhook").set("x-razorpay-event-id", "evt_missing_sig").set("Content-Type", "application/json").send(payload);
+      expect(res.status).toBe(400);
+    });
+
+    it("rejects an invalid signature", async () => {
+      const payload = JSON.stringify({ event: "payment.authorized", payload: {} });
+      const res = await request(app).post("/api/payments/webhook").set("x-razorpay-event-id", "evt_bad_sig").set("x-razorpay-signature", "00".repeat(32)).set("Content-Type", "application/json").send(payload);
+      expect(res.status).toBe(400);
+    });
+
+    it("stores an event ID and acknowledges a repeated event without reprocessing", async () => {
+      const WebhookEvent = require("../models/webhookEvent");
+      const payload = JSON.stringify({ event: "payment.authorized", payload: {} });
+      const signature = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+      const send = () => request(app).post("/api/payments/webhook").set("x-razorpay-event-id", "evt_duplicate_test").set("x-razorpay-signature", signature).set("Content-Type", "application/json").send(payload);
+      const first = await send();
+      const second = await send();
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      expect(second.body.duplicate).toBe(true);
+      expect(await WebhookEvent.countDocuments({ eventId: "evt_duplicate_test" })).toBe(1);
+    });
+  });
+
 });

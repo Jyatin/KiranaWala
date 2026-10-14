@@ -1,57 +1,58 @@
-name: Node.js CI 
+name: Node.js CI
 
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push events but only for the main branch
   push:
-    branches: [ main ]
-  # Allows you to run this workflow manually from the Actions tab
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
-  build:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest # Using a Linux runner is common and often faster for Node.js
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
+  backend-tests:
+    runs-on: ubuntu-latest
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # Sets up Node.js environment
-      - name: Use Node.js 18.x # Adjust the version if needed
-        uses: actions/setup-node@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 18.x
-          cache: 'npm' # Cache npm dependencies to speed up subsequent runs
-          cache-dependency-path: server/package-lock.json # Point to your package-lock.json
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
 
-      # Installs dependencies using 'npm ci' which is generally recommended for CI
-      # It uses package-lock.json for deterministic installs
-      - name: Install Dependencies
-        working-directory: ./server # Run npm commands in the server directory
+      - name: Install backend dependencies
+        working-directory: server
         run: npm ci
 
-      # Add this new step to run the unit tests
-      - name: Run Backend Unit Tests
-        working-directory: ./server # Run the test command in the server directory
-        run: npm test # Executes the "test": "jest" script from server/package.json
+      - name: Run backend Jest suite
+        working-directory: server
+        run: npm test
 
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
 
+      - name: Install frontend dependencies
+        run: npm ci
 
+      - name: Build current Next.js frontend
+        run: npm run build
 
+  frontend-docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-
-
-
-
-
-
-
-
-
-
-        
+      - name: Build current Next.js frontend image
+        run: docker build -f Dockerfile.frontend -t kiranawala-frontend:ci .

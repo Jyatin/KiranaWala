@@ -5,6 +5,8 @@ services:
       dockerfile: server/Dockerfile 
     ports:
       - "3000:3000"
+    env_file:
+      - ./server/.env
     environment:
       - MONGO_URI=mongodb://mongo:27017/kiranawala
     depends_on:
@@ -18,9 +20,13 @@ services:
       - mongo-data:/data/db
 
   frontend:
-    build: ./public
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
     ports:
-      - "80:80"
+      - "3001:3000"
+    depends_on:
+      - server
 
 volumes:
   mongo-data:

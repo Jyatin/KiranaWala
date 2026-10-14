@@ -108,144 +108,97 @@ router.post("/verify", authenticateToken, async (req, res) => {
 // Handles: payment.captured, payment.failed, refund.created, refund.processed
 // =====================================================
 router.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  let eventId;
   try {
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    const signature = req.headers["x-razorpay-signature"];
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    const signature = req.get("x-razorpay-signature");
+    eventId = req.get("x-razorpay-event-id");
 
-    // Parse body — handle both raw buffer and already-parsed JSON
+    if (!secret) return res.status(503).json({ success: false, message: "Webhook verification is not configured" });
+    if (!signature) return res.status(400).json({ success: false, message: "Missing webhook signature" });
+    if (!eventId) return res.status(400).json({ success: false, message: "Missing Razorpay event ID" });
+    if (!Buffer.isBuffer(req.body)) return res.status(400).json({ success: false, message: "Expected raw JSON request body" });
+
+    const expected = crypto.createHmac("sha256", secret).update(req.body).digest();
+    const supplied = Buffer.from(signature, "hex");
+    if (supplied.length !== expected.length || !crypto.timingSafeEqual(expected, supplied)) {
+      return res.status(400).json({ success: false, message: "Invalid webhook signature" });
+    }
+
     let body;
-    if (Buffer.isBuffer(req.body)) {
-      body = JSON.parse(req.body.toString("utf8"));
-    } else {
-      body = req.body;
+    try { body = JSON.parse(req.body.toString("utf8")); }
+    catch { return res.status(400).json({ success: false, message: "Malformed webhook JSON" }); }
+
+    const WebhookEvent = require("../models/webhookEvent");
+    const now = new Date();
+    const staleBefore = new Date(now.getTime() - 5 * 60 * 1000);
+    try {
+      await WebhookEvent.create({ eventId, eventType: body.event || "unknown", status: "processing", processingStartedAt: now });
+    } catch (err) {
+      if (err.code !== 11000) throw err;
+      const existing = await WebhookEvent.findOne({ eventId });
+      if (existing?.status === "processed") return res.status(200).json({ status: "ok", duplicate: true });
+      const reclaimed = await WebhookEvent.findOneAndUpdate(
+        { eventId, $or: [{ status: "failed" }, { status: "processing", processingStartedAt: { $lt: staleBefore } }] },
+        { $set: { status: "processing", processingStartedAt: now, lastError: "" }, $inc: { attempts: 1 } },
+        { new: true },
+      );
+      if (!reclaimed) return res.status(500).json({ success: false, message: "Webhook event is already being processed" });
     }
 
-    // Validate webhook signature if secret is configured
-    if (webhookSecret && signature) {
-      const rawBody = Buffer.isBuffer(req.body)
-        ? req.body.toString("utf8")
-        : JSON.stringify(req.body);
-      const expectedSig = crypto
-        .createHmac("sha256", webhookSecret)
-        .update(rawBody)
-        .digest("hex");
-
-      if (expectedSig !== signature) {
-        console.error("[Webhook] Invalid signature");
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid webhook signature" });
-      }
-    }
-
-    const event = body.event;
-    const paymentEntity = body.payload?.payment?.entity;
-
-    // ── payment.captured ──
-    if (event === "payment.captured" && paymentEntity) {
-      const razorpayOrderId = paymentEntity.order_id;
-      const razorpayPaymentId = paymentEntity.id;
-
-      const order = await Order.findOne({ razorpayOrderId });
-      if (order && order.paymentStatus !== "paid" && order.paymentStatus !== "captured") {
-        await PaymentService.confirmPayment({
-          orderId: order._id,
-          razorpayOrderId,
-          razorpayPaymentId,
-          razorpaySignature: "webhook_verified",
-          source: "webhook",
-        });
-        console.log(`[Webhook] payment.captured processed for order ${order._id}`);
-      }
-      // Idempotent: if already paid, silently acknowledge
-    }
-
-    // ── payment.failed ──
-    if (event === "payment.failed" && paymentEntity) {
-      const razorpayOrderId = paymentEntity.order_id;
-      const razorpayPaymentId = paymentEntity.id;
-      const failureReason =
-        paymentEntity.error_description || "Payment failed via webhook";
-
-      const order = await Order.findOne({ razorpayOrderId });
-      if (order && order.paymentStatus !== "paid" && order.paymentStatus !== "captured") {
-        await PaymentService.handlePaymentFailure({
-          orderId: order._id,
-          razorpayOrderId,
-          razorpayPaymentId,
-          reason: failureReason,
-        });
-        console.log(`[Webhook] payment.failed processed for order ${order._id}`);
-      }
-    }
-
-    // ── refund.created ──
-    if (event === "refund.created") {
-      const refundEntity = body.payload?.refund?.entity;
-      if (refundEntity) {
-        const razorpayPaymentId = refundEntity.payment_id;
-        const order = await Order.findOne({ razorpayPaymentId });
-        if (order && order.paymentStatus !== "refunded") {
-          order.paymentStatus = "refund_pending";
-          order.status = "refund_pending";
-          order.timeline = order.timeline || [];
-          order.timeline.push({
-            status: "refund_pending",
-            note: `Refund initiated (Refund ID: ${refundEntity.id})`,
-            timestamp: new Date(),
-          });
-          order.webhookVerified = true;
-          await order.save();
-          console.log(`[Webhook] refund.created processed for order ${order._id}`);
+    try {
+      const event = body.event;
+      const payment = body.payload?.payment?.entity;
+      if (event === "payment.captured" && payment) {
+        const order = await Order.findOne({ razorpayOrderId: payment.order_id });
+        if (order && order.paymentStatus !== "paid" && order.paymentStatus !== "captured") {
+          await PaymentService.confirmPayment({ orderId: order._id, razorpayOrderId: payment.order_id, razorpayPaymentId: payment.id, razorpaySignature: "webhook_verified", source: "webhook" });
         }
-      }
-    }
-
-    // ── refund.processed ──
-    if (event === "refund.processed") {
-      const refundEntity = body.payload?.refund?.entity;
-      if (refundEntity) {
-        const razorpayPaymentId = refundEntity.payment_id;
-        const order = await Order.findOne({ razorpayPaymentId });
-        if (order && order.paymentStatus !== "refunded") {
-          order.paymentStatus = "refunded";
-          order.status = "refunded";
-          order.timeline = order.timeline || [];
-          order.timeline.push({
-            status: "refunded",
-            note: `Refund processed (Refund ID: ${refundEntity.id}, Amount: ₹${refundEntity.amount / 100})`,
-            timestamp: new Date(),
-          });
-          order.webhookVerified = true;
-          await order.save();
-
-          // Restore stock
-          for (const item of order.items) {
-            if (item.product) {
-              const Product = require("../models/product");
-              await Product.updateOne(
-                { _id: item.product },
-                {
-                  $inc: {
-                    stock: item.quantity,
-                    availableStock: item.quantity,
-                    soldStock: -item.quantity,
-                  },
-                }
-              ).catch(() => {});
+      } else if (event === "payment.failed" && payment) {
+        const order = await Order.findOne({ razorpayOrderId: payment.order_id });
+        if (order && order.paymentStatus !== "paid" && order.paymentStatus !== "captured") {
+          await PaymentService.handlePaymentFailure({ orderId: order._id, razorpayOrderId: payment.order_id, razorpayPaymentId: payment.id, reason: payment.error_description || "Payment failed via webhook" });
+        }
+      } else if (event === "refund.created") {
+        const refund = body.payload?.refund?.entity;
+        if (refund) {
+          const order = await Order.findOne({ razorpayPaymentId: refund.payment_id });
+          if (order && !["refunded", "refund_pending"].includes(order.paymentStatus)) {
+            order.paymentStatus = "refund_pending";
+            order.status = "refund_pending";
+            order.timeline = order.timeline || [];
+            order.timeline.push({ status: "refund_pending", note: `Refund initiated (Refund ID: ${refund.id})`, timestamp: new Date() });
+            order.webhookVerified = true;
+            await order.save();
+          }
+        }
+      } else if (event === "refund.processed") {
+        const refund = body.payload?.refund?.entity;
+        if (refund) {
+          const order = await Order.findOne({ razorpayPaymentId: refund.payment_id });
+          if (order && order.paymentStatus !== "refunded") {
+            order.paymentStatus = "refunded";
+            order.status = "refunded";
+            order.timeline = order.timeline || [];
+            order.timeline.push({ status: "refunded", note: `Refund processed (Refund ID: ${refund.id}, Amount: ₹${refund.amount / 100})`, timestamp: new Date() });
+            order.webhookVerified = true;
+            await order.save();
+            const Product = require("../models/product");
+            for (const item of order.items) {
+              if (item.product) await Product.updateOne({ _id: item.product }, { $inc: { stock: item.quantity, availableStock: item.quantity, soldStock: -item.quantity } });
             }
           }
-          console.log(`[Webhook] refund.processed for order ${order._id}`);
         }
       }
+      await WebhookEvent.updateOne({ eventId, status: "processing" }, { $set: { status: "processed", processedAt: new Date(), lastError: "" } });
+      return res.status(200).json({ status: "ok" });
+    } catch (err) {
+      await WebhookEvent.updateOne({ eventId, status: "processing" }, { $set: { status: "failed", lastError: String(err.message || err).slice(0, 1000) } }).catch((ledgerErr) => console.error("[Webhook] Could not record failure:", ledgerErr.message));
+      throw err;
     }
-
-    // Always respond 200 to acknowledge the webhook
-    res.json({ status: "ok" });
   } catch (err) {
     console.error("[Webhook] processing error:", err);
-    // Still return 200 to prevent Razorpay from retrying indefinitely
-    res.status(200).json({ status: "error", message: err.message });
+    return res.status(500).json({ success: false, message: "Webhook processing failed" });
   }
 });
 
