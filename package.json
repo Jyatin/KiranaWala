@@ -3,12 +3,19 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+ fix/add-nodemon-dev-script
+    "start": "node server/server.js",
+    "dev": "npm --prefix server run dev",
+    "seed": "npm --prefix server run seed",
+    "test": "npm --prefix server test"
+=======
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "server": "node server/server.js",
     "seed": "node server/scripts/seedDemoData.js",
     "test": "echo \"Error: no test specified\" && exit 1"
+ main
   },
   "keywords": [],
   "author": "",
