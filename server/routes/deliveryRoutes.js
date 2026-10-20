@@ -5,8 +5,23 @@ const router = express.Router();
 const mongoose = require("mongoose");
 const Order = require("../models/order");
 const User = require("../models/user");
+const Store = require("../models/store");
 const Delivery = require("../models/delivery");
+const crypto = require("crypto");
 const { authenticateToken, requireRole } = require("../middleware/authMiddleware");
+
+// Timing-safe OTP comparison handling length mismatches without throwing
+function verifyOtpTimingSafe(actualOtp, providedOtp) {
+  if (!actualOtp || !providedOtp) return false;
+  const actualStr = String(actualOtp).trim();
+  const providedStr = String(providedOtp).trim();
+  const actualBuf = Buffer.from(actualStr, "utf8");
+  const providedBuf = Buffer.from(providedStr, "utf8");
+  if (actualBuf.length !== providedBuf.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(actualBuf, providedBuf);
+}
 
 // Allowed delivery state progression
 const VALID_DELIVERY_TRANSITIONS = {
@@ -153,7 +168,7 @@ router.patch(
   }
 );
 
-// PATCH /api/delivery/orders/:id/status - Runner status transition
+// PATCH /api/delivery/orders/:id/status - Runner/Merchant status transition
 router.patch(
   "/orders/:id/status",
   authenticateToken,
@@ -162,25 +177,33 @@ router.patch(
     try {
       const { id } = req.params;
       const { status, otp } = req.body;
-      const runnerId = req.user.id || req.user.userId;
+      const userId = req.user.id || req.user.userId;
+      const userRole = req.user.role;
 
       if (!id || !mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({ success: false, message: "Invalid order ID" });
       }
 
-      const order = await Order.findById(id);
-      if (!order) {
+      // Enforce ownership strictly inside the database query
+      const orderFilter = { _id: id };
+
+      if (userRole === "store-owner") {
+        const store = await Store.findOne({ owner: userId });
+        if (!store) {
+          return res.status(404).json({ success: false, message: "Order not found" });
+        }
+        orderFilter.store = store._id;
+      } else if (userRole === "delivery-partner") {
+        orderFilter.deliveryPartner = userId;
+      } else if (userRole === "admin") {
+        // Platform admin can transition any order
+      } else {
         return res.status(404).json({ success: false, message: "Order not found" });
       }
 
-      // Check runner assignment if caller is delivery-partner
-      if (req.user.role === "delivery-partner") {
-        if (!order.deliveryPartner || order.deliveryPartner.toString() !== runnerId) {
-          return res.status(403).json({
-            success: false,
-            message: "Unauthorized: You are not assigned to this delivery",
-          });
-        }
+      const order = await Order.findOne(orderFilter).select("+deliveryOtp");
+      if (!order) {
+        return res.status(404).json({ success: false, message: "Order not found" });
       }
 
       const currentStatus = order.status;
@@ -193,14 +216,75 @@ router.patch(
         });
       }
 
-      // If transitioning to delivered, verify delivery OTP
+      // If transitioning to delivered, verify delivery OTP with rate limiting & constant-time check
       if (status === "delivered") {
-        if (order.deliveryOtp && otp && otp.toString().trim() !== order.deliveryOtp) {
+        if (!order.deliveryOtp) {
+          return res.status(400).json({
+            success: false,
+            message: "Order cannot be marked delivered without a valid delivery OTP configuration",
+          });
+        }
+
+        // Check lockout status (15-minute cooldown after 5 failed attempts)
+        const OTP_LOCKOUT_MS = 15 * 60 * 1000; // 15-minute cooldown
+        if (order.otpLockedUntil && new Date(order.otpLockedUntil) > new Date()) {
+          return res.status(429).json({
+            success: false,
+            message: "Too many failed OTP attempts. Order verification is locked for 15 minutes.",
+          });
+        }
+        if (order.otpAttempts >= 5 && (!order.otpLockedUntil || new Date(order.otpLockedUntil) > new Date())) {
+          return res.status(429).json({
+            success: false,
+            message: "Too many failed OTP attempts. Order verification is locked for 15 minutes.",
+          });
+        }
+
+        // OTP is strictly required whenever order.deliveryOtp exists
+        if (!otp) {
+          const updated = await Order.findOneAndUpdate(
+            { _id: order._id },
+            { $inc: { otpAttempts: 1 } },
+            { new: true }
+          );
+          if (updated && updated.otpAttempts >= 5) {
+            await Order.updateOne(
+              { _id: order._id },
+              { $set: { otpLockedUntil: new Date(Date.now() + OTP_LOCKOUT_MS) } }
+            );
+          }
+          return res.status(400).json({
+            success: false,
+            message: "Delivery OTP is required to mark order as delivered",
+          });
+        }
+
+        const isValidOtp = verifyOtpTimingSafe(order.deliveryOtp, otp);
+        if (!isValidOtp) {
+          const updated = await Order.findOneAndUpdate(
+            { _id: order._id },
+            { $inc: { otpAttempts: 1 } },
+            { new: true }
+          );
+          if (updated && updated.otpAttempts >= 5) {
+            await Order.updateOne(
+              { _id: order._id },
+              { $set: { otpLockedUntil: new Date(Date.now() + OTP_LOCKOUT_MS) } }
+            );
+            return res.status(429).json({
+              success: false,
+              message: "Too many failed OTP attempts. Order verification is locked for 15 minutes.",
+            });
+          }
           return res.status(400).json({
             success: false,
             message: "Invalid Delivery OTP provided by customer",
           });
         }
+
+        // Correct OTP: reset failed attempts
+        order.otpAttempts = 0;
+        order.otpLockedUntil = null;
       }
 
       order.status = status;
@@ -244,20 +328,43 @@ router.patch(
   }
 );
 
-// GET /api/delivery/orders/:id/track - Public/Authenticated tracking timeline
-router.get("/orders/:id/track", async (req, res) => {
+// GET /api/delivery/orders/:id/track - Authenticated, Role-Scoped Tracking Timeline
+router.get("/orders/:id/track", authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user.id || req.user.userId;
+    const userRole = req.user.role;
 
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: "Invalid order ID" });
     }
 
-    const order = await Order.findById(id)
+    // Enforce ownership strictly inside the database query
+    const orderFilter = { _id: id };
+
+    if (userRole === "customer") {
+      orderFilter.customer = userId;
+    } else if (userRole === "store-owner") {
+      const store = await Store.findOne({ owner: userId });
+      if (!store) {
+        return res.status(404).json({ success: false, message: "Order not found" });
+      }
+      orderFilter.store = store._id;
+    } else if (userRole === "delivery-partner") {
+      orderFilter.deliveryPartner = userId;
+    } else if (userRole === "admin") {
+      // Platform administrator can query any order by ID
+    } else {
+      orderFilter.customer = userId;
+    }
+
+    const order = await Order.findOne(orderFilter)
+      .select("+deliveryOtp")
       .populate("store", "name category location address rating phone")
       .populate("deliveryPartner", "username phone");
 
     if (!order) {
+      // Return 404 for unauthorized or non-existent orders to prevent ID enumeration
       return res.status(404).json({ success: false, message: "Order not found" });
     }
 
@@ -291,13 +398,27 @@ router.get("/orders/:id/track", async (req, res) => {
       },
     ];
 
+    /**
+     * Data visibility and PII access matrix for order tracking:
+     * - Customer (Buyer): Receives store info, runner info (name, phone, rating, vehicle),
+     *   order stages, timeline, deliveryEtaMinutes, and `deliveryOtp` (for verification at delivery).
+     * - Store Owner (Merchant): Receives store info, runner info, order stages, timeline,
+     *   deliveryEtaMinutes. `deliveryOtp` is STRIPPED (only customer must possess OTP).
+     * - Delivery Partner (Runner): Receives store info, runner info, order stages, timeline,
+     *   deliveryEtaMinutes. `deliveryOtp` is STRIPPED (must collect verbally from customer).
+     * - Admin: Operational tracking timeline. `deliveryOtp` is STRIPPED.
+     */
+    const isOwningCustomer =
+      (userRole === "customer" || userRole === "buyer") &&
+      Boolean(order.customer && order.customer.toString() === userId.toString());
+
     res.json({
       success: true,
       orderId: order._id,
       currentStatus: order.status,
       stages,
       etaMinutes: order.deliveryEtaMinutes || 18,
-      deliveryOtp: order.deliveryOtp,
+      ...(isOwningCustomer && { deliveryOtp: order.deliveryOtp }),
       store: order.store,
       runner: order.deliveryPartner
         ? {

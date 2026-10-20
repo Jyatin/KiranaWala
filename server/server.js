@@ -17,6 +17,14 @@ const deliveryRoutes = require("./routes/deliveryRoutes");
 const reviewRoutes = require("./routes/reviewRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
+const InventoryService = require("./services/inventoryService");
+const ReconciliationService = require("./services/reconciliationService");
+const { correlationMiddleware } = require("./middleware/observabilityMiddleware");
+const { validateEnvironment } = require("./config/env");
+const { authRateLimiter } = require("./middleware/rateLimitMiddleware");
+
+// Validate startup environment configuration
+validateEnvironment();
 
 const app = express();
 
@@ -24,8 +32,70 @@ const app = express();
 // MIDDLEWARE
 // =====================================================
 
-app.use(cors());
-app.use(express.json());
+app.use(correlationMiddleware);
+
+// Security Headers (native, dependency-free)
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  if (process.env.NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+  next();
+});
+
+// Restrictive CORS Allowlist
+const allowedOrigins = process.env.FRONTEND_URL
+  ? [process.env.FRONTEND_URL, "http://localhost:3000", "http://localhost:3001"]
+  : ["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== "production") {
+        return callback(null, true);
+      }
+      return callback(new Error("CORS policy violation: origin not allowed"));
+    },
+    credentials: true,
+  })
+);
+
+// Raw body preservation for webhook endpoints before general body parser
+app.use(
+  "/api/payments/webhook",
+  express.raw({ type: "*/*" }),
+  (req, res, next) => {
+    if (Buffer.isBuffer(req.body)) {
+      req.rawBody = req.body;
+      try {
+        req.body = JSON.parse(req.body.toString("utf8"));
+      } catch (err) {
+        req.body = {};
+      }
+    }
+    next();
+  }
+);
+
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
+
+// Authentication rate limiting on login and registration endpoints
+const authLimiter = authRateLimiter({ max: 30, windowMs: 15 * 60 * 1000 });
+app.use("/api/customer/login", authLimiter);
+app.use("/api/customer/register", authLimiter);
+app.use("/api/store/login", authLimiter);
+app.use("/api/store/register", authLimiter);
+app.use("/api/store-owner/login", authLimiter);
+app.use("/api/store-owner/register", authLimiter);
 
 // Serve public files
 app.use(express.static(path.join(__dirname, "../public")));
@@ -36,22 +106,6 @@ app.use(express.static(path.join(__dirname, "../views")));
 // =====================================================
 // MONGODB CONNECTION
 // =====================================================
-
-const seedProductionCatalog = async () => {
-  if (process.env.NODE_ENV !== "production" || !process.env.MONGO_URI) {
-    return;
-  }
-
-  try {
-    const { seedData } = require("./scripts/seedDemoData");
-    console.log("Production MongoDB connected — verifying demo catalog...");
-    await seedData({ closeConnection: false });
-    console.log("Production catalog verification complete.");
-  } catch (err) {
-    // Do not prevent the API from starting if catalog seeding fails.
-    console.error("Production catalog seeding failed:", err.message);
-  }
-};
 
 const connectMongo = async () => {
   // If already connected (e.g., from devServerWithMemoryDb.js), skip reconnection
@@ -78,7 +132,6 @@ const connectMongo = async () => {
         serverSelectionTimeoutMS: isProduction ? 8000 : 3000,
       });
       console.log("Connected to MongoDB successfully");
-      await seedProductionCatalog();
       return;
     } catch (err) {
       console.error("Primary MongoDB connection failed:", err.message);
@@ -105,9 +158,15 @@ const connectMongo = async () => {
 
 connectMongo();
 
-// MongoDB connection status
+// MongoDB connection status & single-instance background worker manager
+let workersStarted = false;
 mongoose.connection.on("connected", () => {
   console.log("Mongoose connection established");
+  if (process.env.NODE_ENV !== "test" && !workersStarted) {
+    workersStarted = true;
+    InventoryService.startCleanupWorker(60000);
+    ReconciliationService.startReconciliationWorker(300000);
+  }
 });
 
 mongoose.connection.on("error", (err) => {
@@ -226,6 +285,23 @@ app.get("/health/db", (req, res) => {
   res.json({
     database: states[state] || "unknown",
     connected: state === 1,
+  });
+});
+
+// =====================================================
+// CENTRALIZED ERROR HANDLER
+// =====================================================
+
+app.use((err, req, res, next) => {
+  console.error("[Internal Error]", err.message, err.stack);
+  if (res.headersSent) {
+    return next(err);
+  }
+  const isProd = process.env.NODE_ENV === "production";
+  const status = err.status || 500;
+  res.status(status).json({
+    success: false,
+    message: isProd && status === 500 ? "An unexpected internal server error occurred." : err.message,
   });
 });
 

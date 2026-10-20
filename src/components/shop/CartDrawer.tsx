@@ -18,6 +18,8 @@ import {
   AlertTriangle,
   Tag,
   Banknote,
+  Check,
+  Zap,
 } from "lucide-react";
 import { CartItem, Store } from "./types";
 import { Button } from "@/components/ui/Button";
@@ -119,7 +121,13 @@ export function CartDrawer({
     (acc, item) => acc + item.product.price * item.quantity,
     0
   );
-  const deliveryFee = subtotal > 300 || subtotal === 0 ? 0 : 25;
+  const FREE_DELIVERY_THRESHOLD = 300;
+  const deliveryFee = subtotal >= FREE_DELIVERY_THRESHOLD || subtotal === 0 ? 0 : 25;
+  const amountForFreeDelivery = Math.max(0, FREE_DELIVERY_THRESHOLD - subtotal);
+  const freeDeliveryProgress = Math.min(
+    100,
+    Math.round((subtotal / FREE_DELIVERY_THRESHOLD) * 100)
+  );
   const discount = couponDiscount;
   const total = Math.max(0, subtotal + deliveryFee - discount);
 
@@ -540,6 +548,37 @@ export function CartDrawer({
           </div>
         )}
 
+        {/* Klarna-Style Free Delivery Progress Meter */}
+        {cartItems.length > 0 && step === "cart" && (
+          <div className="bg-[#FAF8F5] border-b border-[#E8E2D9] px-6 py-3 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              {amountForFreeDelivery > 0 ? (
+                <span className="text-[#504F5F] font-medium">
+                  Add <strong className="text-[#0B051D] font-bold">₹{amountForFreeDelivery}</strong> more for <span className="text-[#046234] font-bold">FREE delivery</span>
+                </span>
+              ) : (
+                <span className="text-[#046234] font-bold flex items-center gap-1.5">
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#046234] text-white">
+                    <Check className="h-2.5 w-2.5 stroke-[3]" />
+                  </span>
+                  Unlocked FREE Neighborhood Delivery!
+                </span>
+              )}
+              <span className="font-bold tabular-nums text-[11px] text-[#0B051D]">
+                {freeDeliveryProgress}%
+              </span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-[#E2E2E7]">
+              <div
+                className={`h-full transition-all duration-500 ease-out rounded-full ${
+                  amountForFreeDelivery === 0 ? "bg-[#046234]" : "bg-[#FFA8CD]"
+                }`}
+                style={{ width: `${freeDeliveryProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Drawer Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* ── SUCCESS ── */}
@@ -820,44 +859,73 @@ export function CartDrawer({
               </div>
 
               {/* Payment Method Selector */}
-              <div className="space-y-2">
-                <label className="block text-[11px] font-bold text-[#475569]">
-                  Select Payment Method
-                </label>
-                <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569]">
+                    Select Payment Method
+                  </label>
+                  <span className="text-[10px] text-[#059669] font-bold flex items-center gap-1">
+                    <ShieldCheck className="h-3 w-3" /> 100% Encrypted
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <button
                     type="button"
                     onClick={() => setPaymentMethod("razorpay")}
-                    className={`flex flex-col text-left p-3 rounded-2xl border transition-all cursor-pointer ${
+                    className={`relative flex flex-col text-left p-3.5 rounded-2xl border transition-all cursor-pointer ${
                       paymentMethod === "razorpay"
-                        ? "border-[#0B051D] bg-white ring-1.5 ring-[#0B051D] shadow-xs"
+                        ? "border-[#0B051D] bg-white ring-2 ring-[#0B051D]/15 shadow-sm"
                         : "border-[#E8E2D9] bg-[#FAF8F5] hover:bg-white hover:border-[#CBD5E1]"
                     }`}
                   >
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-[#0B051D]">
-                      <CreditCard className="h-3.5 w-3.5 text-[#059669]" />
-                      <span>Razorpay</span>
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-[#0B051D]">
+                        <CreditCard className="h-3.5 w-3.5 text-[#0B051D]" />
+                        <span>Online UPI / Cards</span>
+                      </div>
+                      <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${
+                        paymentMethod === "razorpay" ? "border-[#0B051D]" : "border-[#CBD5E1]"
+                      }`}>
+                        {paymentMethod === "razorpay" && (
+                          <div className="h-2 w-2 rounded-full bg-[#0B051D]" />
+                        )}
+                      </div>
                     </div>
-                    <span className="text-[10px] text-[#64748B] mt-1 leading-tight">
-                      UPI, Cards & NetBanking
+                    <span className="text-[10px] text-[#64748B] mt-1 leading-snug">
+                      GPay, PhonePe, Paytm, Cards &amp; NetBanking
+                    </span>
+                    <span className="inline-block mt-2 w-fit rounded-full bg-[#C1F4D1] text-[#046234] text-[10px] font-bold px-2 py-0.5">
+                      Recommended · Instant
                     </span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setPaymentMethod("cod")}
-                    className={`flex flex-col text-left p-3 rounded-2xl border transition-all cursor-pointer ${
+                    className={`relative flex flex-col text-left p-3.5 rounded-2xl border transition-all cursor-pointer ${
                       paymentMethod === "cod"
-                        ? "border-[#0B051D] bg-white ring-1.5 ring-[#0B051D] shadow-xs"
+                        ? "border-[#0B051D] bg-white ring-2 ring-[#0B051D]/15 shadow-sm"
                         : "border-[#E8E2D9] bg-[#FAF8F5] hover:bg-white hover:border-[#CBD5E1]"
                     }`}
                   >
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-[#0B051D]">
-                      <Banknote className="h-3.5 w-3.5 text-[#D9531E]" />
-                      <span>Pay on Delivery</span>
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-[#0B051D]">
+                        <Banknote className="h-3.5 w-3.5 text-[#D9531E]" />
+                        <span>Pay on Delivery</span>
+                      </div>
+                      <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${
+                        paymentMethod === "cod" ? "border-[#0B051D]" : "border-[#CBD5E1]"
+                      }`}>
+                        {paymentMethod === "cod" && (
+                          <div className="h-2 w-2 rounded-full bg-[#0B051D]" />
+                        )}
+                      </div>
                     </div>
-                    <span className="text-[10px] text-[#64748B] mt-1 leading-tight">
-                      Cash or UPI at doorstep
+                    <span className="text-[10px] text-[#64748B] mt-1 leading-snug">
+                      Cash or QR scan at your doorstep
+                    </span>
+                    <span className="inline-block mt-2 w-fit rounded-full bg-[#FAF8F5] text-[#504F5F] border border-[#E8E2D9] text-[10px] font-bold px-2 py-0.5">
+                      No Prepayment
                     </span>
                   </button>
                 </div>
@@ -868,7 +936,7 @@ export function CartDrawer({
                 variant="primary"
                 size="lg"
                 isLoading={loadingOrder}
-                className="w-full justify-center mt-4"
+                className="w-full justify-center mt-4 rounded-full font-bold shadow-md hover:shadow-lg"
               >
                 {paymentMethod === "razorpay"
                   ? `Pay ₹${total} with Razorpay`
@@ -968,15 +1036,22 @@ export function CartDrawer({
               </div>
             </div>
 
-            <Button
-              variant="primary"
-              size="lg"
-              className="w-full justify-center"
+            <button
+              type="button"
               onClick={() => setStep("address")}
+              className="group flex h-13 w-full items-center justify-between rounded-full bg-[#0B051D] px-6 text-sm font-bold text-white transition-all hover:bg-[#2C2242] active:scale-[0.98] cursor-pointer shadow-md hover:shadow-lg"
             >
-              <span>Proceed to Checkout</span>
-              <ArrowRight className="h-4 w-4" />
-            </Button>
+              <div className="flex items-center gap-2">
+                <span>Proceed to Checkout</span>
+                <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-black">
+                  {cartItems.reduce((acc, item) => acc + item.quantity, 0)} items
+                </span>
+              </div>
+              <div className="flex items-center gap-2 font-black tabular-nums text-base">
+                <span>₹{total}</span>
+                <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1 text-[#FFA8CD]" />
+              </div>
+            </button>
           </div>
         )}
       </div>

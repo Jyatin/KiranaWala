@@ -16,6 +16,7 @@
 const mongoose = require("mongoose");
 const Product = require("../../models/product");
 const Store = require("../../models/store");
+const Cart = require("../../models/cart");
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -139,14 +140,28 @@ async function searchProducts({ query, storeId, category, limit } = {}) {
   filter.stock = { $gt: 0 };
 
   // Optional free-text search using case-insensitive regex across
-  // name, description, and category fields.
+  // name, description, and category fields with multi-word tokenization.
   if (query && typeof query === "string" && query.trim().length > 0) {
+    const tokens = query.trim().split(/\s+/).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).filter(Boolean);
     const escapedQuery = query.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    filter.$or = [
+
+    const orClauses = [
       { name: { $regex: escapedQuery, $options: "i" } },
       { description: { $regex: escapedQuery, $options: "i" } },
       { category: { $regex: escapedQuery, $options: "i" } },
     ];
+
+    if (tokens.length > 1) {
+      for (const token of tokens) {
+        if (token.length > 2) {
+          orClauses.push({ name: { $regex: token, $options: "i" } });
+          orClauses.push({ description: { $regex: token, $options: "i" } });
+          orClauses.push({ category: { $regex: token, $options: "i" } });
+        }
+      }
+    }
+
+    filter.$or = orClauses;
   }
 
   // Optional store filter

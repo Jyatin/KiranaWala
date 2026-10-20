@@ -98,7 +98,7 @@ const orderSchema = new mongoose.Schema(
     },
     paymentStatus: {
       type: String,
-      enum: ["pending", "paid", "failed", "refunded"],
+      enum: ["pending", "paid", "failed", "refunded", "refund_pending"],
       default: "pending",
     },
     razorpayOrderId: { type: String, default: "" },
@@ -114,7 +114,9 @@ const orderSchema = new mongoose.Schema(
     deliveryPartnerName: { type: String, default: "" },
     deliveryPartnerPhone: { type: String, default: "" },
     deliveryEtaMinutes: { type: Number, default: 18 },
-    deliveryOtp: { type: String, default: "4291" },
+    deliveryOtp: { type: String, select: false },
+    otpAttempts: { type: Number, default: 0 },
+    otpLockedUntil: { type: Date, default: null },
     status: {
       type: String,
       enum: [
@@ -151,5 +153,8 @@ const orderSchema = new mongoose.Schema(
 orderSchema.index({ customer: 1, createdAt: -1 });
 orderSchema.index({ store: 1, status: 1 });
 orderSchema.index({ deliveryPartner: 1, status: 1 });
+orderSchema.index({ razorpayOrderId: 1 }, { sparse: true });
+orderSchema.index({ status: 1, createdAt: 1 });
+orderSchema.index({ paymentStatus: 1, updatedAt: 1 });
 
 module.exports = mongoose.model("Order", orderSchema);

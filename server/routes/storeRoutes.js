@@ -6,7 +6,9 @@ const Product = require("../models/product");
 const Order = require("../models/order");
 const DemandPrediction = require("../models/demandPrediction");
 const InventoryService = require("../services/inventoryService");
+const PaymentService = require("../services/paymentService");
 const jwt = require("jsonwebtoken");
+const { getJwtSecret } = require("../config/jwt");
 const {
   authenticateToken,
   requireStoreOwner,
@@ -122,8 +124,8 @@ router.post("/login", async (req, res) => {
       return res.status(404).json({ message: "Store not found" });
     }
 
-    // Create token with role and fallback secret
-    const secret = process.env.JWT_SECRET || "your_jwt_secret";
+    // Create token with role and validated secret
+    const secret = getJwtSecret();
     const token = jwt.sign(
       { id: user._id, userId: user._id, role: user.role, email: user.email },
       secret,
@@ -512,13 +514,39 @@ router.patch(
         });
       }
 
-      // If transitioning to cancelled, restore stock for products
+      // If transitioning to cancelled
       if (status === "cancelled") {
+        if (order.paymentStatus === "paid") {
+          const refundResult = await PaymentService.processRefund({
+            orderId: order._id,
+            reason: "Cancelled by store owner",
+            storeId: store._id,
+          });
+
+          const refundedOrder = await Order.findById(orderId).populate(
+            "customer",
+            "username email"
+          );
+
+          return res.json({
+            message: "Order cancelled and refund initiated successfully",
+            order: refundedOrder,
+            refund: refundResult,
+          });
+        }
+
+        // Unpaid order stock restoration
         for (const item of order.items) {
           if (item.product) {
             await Product.updateOne(
               { _id: item.product },
-              { $inc: { stock: item.quantity } },
+              {
+                $inc: {
+                  stock: item.quantity,
+                  availableStock: item.quantity,
+                  soldStock: -item.quantity,
+                },
+              }
             );
           }
         }

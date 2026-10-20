@@ -129,33 +129,91 @@ class InventoryService {
   }
 
   /**
-   * Scan for expired pending_payment orders and release their reservations.
+   * Scan for expired pending_payment orders and atomically release their reservations.
+   * Race-safe & idempotent: Uses atomic findOneAndUpdate per candidate order so only 1 runner transitions the order.
    */
   static async cleanupExpiredReservations() {
     try {
       const expirationThreshold = new Date(Date.now() - 15 * 60 * 1000);
-      const expiredOrders = await Order.find({
+      const candidates = await Order.find({
         status: "pending_payment",
-        createdAt: { $lt: expirationThreshold }
-      });
+        createdAt: { $lt: expirationThreshold },
+      }).select("_id items");
 
-      for (const order of expiredOrders) {
-        order.status = "payment_failed";
-        order.timeline = order.timeline || [];
-        order.timeline.push({
-          status: "payment_failed",
-          note: "Reservation expired after 15 minutes of inactivity",
-          timestamp: new Date()
-        });
-        await order.save();
-        await this.releaseReservation(order.items);
+      let cleanedCount = 0;
+
+      for (const candidate of candidates) {
+        // Atomically claim and expire the order
+        const claimedOrder = await Order.findOneAndUpdate(
+          {
+            _id: candidate._id,
+            status: "pending_payment",
+          },
+          {
+            $set: {
+              status: "payment_failed",
+              paymentStatus: "failed",
+            },
+            $push: {
+              timeline: {
+                status: "payment_failed",
+                note: "Reservation expired after 15 minutes of inactivity",
+                timestamp: new Date(),
+              },
+            },
+          },
+          { new: false }
+        );
+
+        if (claimedOrder) {
+          cleanedCount++;
+          await this.releaseReservation(claimedOrder.items);
+        }
       }
 
-      return expiredOrders.length;
+      return cleanedCount;
     } catch (err) {
       console.error("Cleanup expired reservations error:", err);
       return 0;
     }
+  }
+
+  /**
+   * Start recurring background worker for reservation cleanup.
+   * @param {number} intervalMs 
+   */
+  static startCleanupWorker(intervalMs = 60000) {
+    if (this._workerInterval) return;
+    this._isCleaning = false;
+    this._workerInterval = setInterval(async () => {
+      if (this._isCleaning) return;
+      this._isCleaning = true;
+      try {
+        const cleaned = await this.cleanupExpiredReservations();
+        if (cleaned > 0) {
+          console.log(`[InventoryWorker] Cleaned up ${cleaned} expired reservation(s).`);
+        }
+      } catch (err) {
+        console.error("[InventoryWorker] Error during cleanup:", err.message);
+      } finally {
+        this._isCleaning = false;
+      }
+    }, intervalMs);
+
+    if (this._workerInterval && this._workerInterval.unref) {
+      this._workerInterval.unref();
+    }
+  }
+
+  /**
+   * Stop recurring background worker.
+   */
+  static stopCleanupWorker() {
+    if (this._workerInterval) {
+      clearInterval(this._workerInterval);
+      this._workerInterval = null;
+    }
+    this._isCleaning = false;
   }
 }
 

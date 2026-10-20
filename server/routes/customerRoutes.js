@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
@@ -9,8 +10,11 @@ const Cart = require("../models/cart");
 const Order = require("../models/order");
 const { authenticateToken, requireCustomer } = require("../middleware/authMiddleware");
 const mongoose = require("mongoose");
+const { getJwtSecret } = require("../config/jwt");
+const { escapeRegex } = require("../utils/sanitize");
 const InventoryService = require("../services/inventoryService");
 const CouponService = require("../services/couponService");
+const PaymentService = require("../services/paymentService");
 
 // Customer Registration
 router.post("/register", async (req, res) => {
@@ -39,15 +43,15 @@ router.post("/login", async (req, res) => {
     const user = await User.findOne({ email, role: "customer" });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(401).json({ message: "Invalid email or password" });
     }
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
-      return res.status(400).json({ message: "Invalid password" });
+      return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    const secret = process.env.JWT_SECRET || "your_jwt_secret";
+    const secret = getJwtSecret();
     const token = jwt.sign(
       { userId: user._id, id: user._id, role: user.role, email: user.email },
       secret,
@@ -133,8 +137,8 @@ router.get("/stores/nearby", async (req, res) => {
       },
     ]);
 
-    // Populate owner details excluding password
-    await Store.populate(stores, { path: "owner", select: "-password" });
+    // Populate owner details safely (only public username, never email, phone, or password)
+    await Store.populate(stores, { path: "owner", select: "username" });
 
     res.json(stores);
   } catch (error) {
@@ -149,7 +153,7 @@ router.get("/stores", async (req, res) => {
     const filter = {};
 
     if (q && q.trim()) {
-      const regex = new RegExp(q.trim(), "i");
+      const regex = new RegExp(escapeRegex(q.trim()), "i");
       filter.$or = [
         { name: regex },
         { description: regex },
@@ -158,7 +162,7 @@ router.get("/stores", async (req, res) => {
     }
 
     if (category && category !== "all" && category !== "All") {
-      filter.category = new RegExp(category.trim(), "i");
+      filter.category = new RegExp(escapeRegex(category.trim()), "i");
     }
 
     const stores = await Store.find(filter).populate("owner", "username");
@@ -191,7 +195,7 @@ router.get("/stores/:storeId", async (req, res) => {
       return res.status(400).json({ message: "Invalid store ID" });
     }
 
-    const store = await Store.findById(storeId).populate("owner", "username email");
+    const store = await Store.findById(storeId).populate("owner", "username");
     if (!store) {
       return res.status(404).json({ message: "Store not found" });
     }
@@ -301,11 +305,11 @@ router.get("/products/search", async (req, res) => {
     }
 
     if (category && category !== "All") {
-      filter.category = new RegExp(category.trim(), "i");
+      filter.category = new RegExp(escapeRegex(category.trim()), "i");
     }
 
     if (brand) {
-      filter.brand = new RegExp(brand.trim(), "i");
+      filter.brand = new RegExp(escapeRegex(brand.trim()), "i");
     }
 
     if (minPrice || maxPrice) {
@@ -320,7 +324,7 @@ router.get("/products/search", async (req, res) => {
     }
 
     if (effectiveQuery) {
-      const searchRegex = new RegExp(effectiveQuery, "i");
+      const searchRegex = new RegExp(escapeRegex(effectiveQuery), "i");
       filter.$or = [
         { name: searchRegex },
         { description: searchRegex },
@@ -369,11 +373,11 @@ router.get("/products/compare", async (req, res) => {
     if (name) {
       const searchTerms = name.toString().trim().split(/\s+/).filter(Boolean);
       queryFilter.$or = searchTerms.map((term) => ({
-        name: new RegExp(term, "i"),
+        name: new RegExp(escapeRegex(term), "i"),
       }));
     }
     if (category) {
-      queryFilter.category = new RegExp(category.toString().trim(), "i");
+      queryFilter.category = new RegExp(escapeRegex(category.toString().trim()), "i");
     }
 
     const matchedProducts = await Product.find(queryFilter)
@@ -1014,8 +1018,8 @@ router.post("/orders", authenticateToken, requireCustomer, async (req, res) => {
       });
     }
 
-    // Generate 4-digit Delivery OTP
-    const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
+    // Generate cryptographically secure 4-digit Delivery OTP
+    const deliveryOtp = crypto.randomInt(1000, 10000).toString();
 
     const initialStatus = paymentMethod === "cod" ? "placed" : "pending_payment";
 
@@ -1104,6 +1108,7 @@ router.get("/orders", authenticateToken, requireCustomer, async (req, res) => {
   try {
     const userId = req.user.id || req.user.userId;
     const orders = await Order.find({ customer: userId })
+      .select("+deliveryOtp")
       .sort({ createdAt: -1 })
       .populate("store", "name category");
     res.json(orders);
@@ -1125,7 +1130,9 @@ router.get("/orders/:orderId", authenticateToken, requireCustomer, async (req, r
     const order = await Order.findOne({
       _id: orderId,
       customer: userId,
-    }).populate("store", "name category description");
+    })
+      .select("+deliveryOtp")
+      .populate("store", "name category description");
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
@@ -1147,7 +1154,6 @@ router.patch("/orders/:orderId/cancel", authenticateToken, requireCustomer, asyn
       return res.status(400).json({ message: "Invalid order ID" });
     }
 
-    // Allow cancellation of placed or pending_payment orders
     const existingOrder = await Order.findOne({
       _id: orderId,
       customer: userId,
@@ -1157,50 +1163,100 @@ router.patch("/orders/:orderId/cancel", authenticateToken, requireCustomer, asyn
       return res.status(404).json({ success: false, message: "Order not found" });
     }
 
-    if (!["placed", "pending_payment"].includes(existingOrder.status)) {
+    if (!["placed", "pending_payment", "confirmed"].includes(existingOrder.status)) {
       return res.status(400).json({
         success: false,
         message: `Order cannot be cancelled in its current status: ${existingOrder.status}`,
       });
     }
 
-    const previousStatus = existingOrder.status;
-    existingOrder.status = "cancelled";
-    existingOrder.timeline = existingOrder.timeline || [];
-    existingOrder.timeline.push({
-      status: "cancelled",
-      note: "Cancelled by customer",
-      timestamp: new Date(),
-    });
-    await existingOrder.save();
+    // ── Paid order cancellation triggers automated refund workflow ──
+    if (existingOrder.paymentStatus === "paid") {
+      try {
+        const refundResult = await PaymentService.processRefund({
+          orderId: existingOrder._id,
+          reason: "Cancelled by customer",
+        });
 
-    // Smart Inventory Restoration
-    if (previousStatus === "pending_payment") {
+        const refundedOrder = await Order.findById(existingOrder._id).populate(
+          "store",
+          "name category description location"
+        );
+
+        return res.json({
+          success: true,
+          message: "Order cancelled and refund initiated successfully",
+          order: refundedOrder,
+          refund: refundResult,
+        });
+      } catch (err) {
+        return res.status(400).json({
+          success: false,
+          message: `Refund processing failed: ${err.message}`,
+        });
+      }
+    }
+
+    // ── Unpaid order cancellation ──
+    const claimedOrder = await Order.findOneAndUpdate(
+      {
+        _id: orderId,
+        customer: userId,
+        status: { $in: ["placed", "pending_payment", "confirmed"] },
+        paymentStatus: { $ne: "paid" },
+      },
+      {
+        $set: {
+          status: "cancelled",
+          paymentStatus: "failed",
+        },
+        $push: {
+          timeline: {
+            status: "cancelled",
+            note: "Cancelled by customer",
+            timestamp: new Date(),
+          },
+        },
+      },
+      { new: false }
+    );
+
+    if (!claimedOrder) {
+      return res.status(400).json({
+        success: false,
+        message: "Order cannot be cancelled (already processed or cancelled)",
+      });
+    }
+
+    // Smart Inventory Restoration for unpaid order
+    if (claimedOrder.status === "pending_payment") {
       // Order had reserved stock, release back to available
-      await InventoryService.releaseReservation(existingOrder.items);
+      await InventoryService.releaseReservation(claimedOrder.items);
     } else {
       // Order had committed stock, restore stock and availableStock
-      for (const item of existingOrder.items) {
+      for (const item of claimedOrder.items) {
         if (item.product) {
           await Product.updateOne(
             { _id: item.product },
-            { $inc: { stock: item.quantity, availableStock: item.quantity, soldStock: -item.quantity } },
+            { $inc: { stock: item.quantity, availableStock: item.quantity, soldStock: -item.quantity } }
           ).catch(() => {});
         }
       }
     }
 
-    await existingOrder.populate("store", "name category description location");
+    const updatedOrder = await Order.findById(orderId).populate(
+      "store",
+      "name category description location"
+    );
 
-    res.json({
+    return res.json({
       success: true,
       message: "Order cancelled successfully",
-      order: existingOrder,
+      order: updatedOrder,
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-
 
 module.exports = router;

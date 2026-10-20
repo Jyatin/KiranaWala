@@ -37,9 +37,10 @@ router.get("/", async (req, res) => {
 });
 
 // POST /api/coupons/validate - Server validation
-router.post("/validate", async (req, res) => {
+router.post("/validate", authenticateToken, async (req, res) => {
   try {
-    const { code, storeId, subtotal, deliveryFee, userId } = req.body;
+    const { code, storeId, subtotal, deliveryFee } = req.body;
+    const userId = req.user?.id || req.user?.userId;
 
     if (!code) {
       return res.status(400).json({ success: false, message: "Coupon code is required" });

@@ -3,8 +3,10 @@
 const express = require("express");
 const router = express.Router();
 const crypto = require("crypto");
+const mongoose = require("mongoose");
 const PaymentService = require("../services/paymentService");
 const Order = require("../models/order");
+const Store = require("../models/store");
 const { authenticateToken, requireRole, requireCustomer } = require("../middleware/authMiddleware");
 
 // =====================================================
@@ -107,35 +109,65 @@ router.post("/verify", authenticateToken, async (req, res) => {
 // Idempotent Razorpay Webhook Handler.
 // Handles: payment.captured, payment.failed, refund.created, refund.processed
 // =====================================================
-router.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+router.post("/webhook", async (req, res) => {
   try {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     const signature = req.headers["x-razorpay-signature"];
 
-    // Parse body — handle both raw buffer and already-parsed JSON
-    let body;
-    if (Buffer.isBuffer(req.body)) {
-      body = JSON.parse(req.body.toString("utf8"));
-    } else {
-      body = req.body;
+    // Fail-closed: RAZORPAY_WEBHOOK_SECRET must be configured
+    if (!webhookSecret) {
+      console.error("[Webhook] RAZORPAY_WEBHOOK_SECRET is not configured. Rejecting webhook.");
+      return res
+        .status(500)
+        .json({ success: false, message: "Webhook secret not configured on server" });
     }
 
-    // Validate webhook signature if secret is configured
-    if (webhookSecret && signature) {
-      const rawBody = Buffer.isBuffer(req.body)
-        ? req.body.toString("utf8")
-        : JSON.stringify(req.body);
-      const expectedSig = crypto
-        .createHmac("sha256", webhookSecret)
-        .update(rawBody)
-        .digest("hex");
+    // Fail-closed: x-razorpay-signature header is mandatory
+    if (!signature) {
+      console.error("[Webhook] Missing x-razorpay-signature header");
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing x-razorpay-signature header" });
+    }
 
-      if (expectedSig !== signature) {
-        console.error("[Webhook] Invalid signature");
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid webhook signature" });
-      }
+    // Fail-closed: validate signature format (must be 64-char hexadecimal string)
+    const HEX_64_REGEX = /^[a-f0-9]{64}$/i;
+    if (typeof signature !== "string" || !HEX_64_REGEX.test(signature.trim())) {
+      console.error("[Webhook] Invalid signature format: must be 64-char hex");
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid webhook signature" });
+    }
+
+    // Fail-closed: req.rawBody must be present (captured via express.json verify callback)
+    if (!req.rawBody) {
+      console.error("[Webhook] Missing raw request body or unsupported content type");
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing raw request body or unsupported content type" });
+    }
+
+    const rawBody = req.rawBody;
+    const body = req.body || {};
+
+    const expectedSig = crypto
+      .createHmac("sha256", webhookSecret)
+      .update(rawBody)
+      .digest("hex");
+
+    // Timing-safe signature comparison with strict byte length check
+    const expectedBuf = Buffer.from(expectedSig, "utf8");
+    const signatureBuf = Buffer.from(signature.trim(), "utf8");
+    const isSignatureValid =
+      expectedBuf.length === 64 &&
+      signatureBuf.length === 64 &&
+      crypto.timingSafeEqual(expectedBuf, signatureBuf);
+
+    if (!isSignatureValid) {
+      console.error("[Webhook] Invalid signature");
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid webhook signature" });
     }
 
     const event = body.event;
@@ -147,7 +179,7 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
       const razorpayPaymentId = paymentEntity.id;
 
       const order = await Order.findOne({ razorpayOrderId });
-      if (order && order.paymentStatus !== "paid" && order.paymentStatus !== "captured") {
+      if (order && order.paymentStatus !== "paid") {
         await PaymentService.confirmPayment({
           orderId: order._id,
           razorpayOrderId,
@@ -168,7 +200,7 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
         paymentEntity.error_description || "Payment failed via webhook";
 
       const order = await Order.findOne({ razorpayOrderId });
-      if (order && order.paymentStatus !== "paid" && order.paymentStatus !== "captured") {
+      if (order && order.paymentStatus !== "paid") {
         await PaymentService.handlePaymentFailure({
           orderId: order._id,
           razorpayOrderId,
@@ -292,10 +324,27 @@ router.post(
   async (req, res) => {
     try {
       const { orderId, amount, reason } = req.body;
+      const userId = req.user.id || req.user.userId;
+      const userRole = req.user.role;
+
+      if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+        return res.status(400).json({ success: false, message: "Valid orderId is required" });
+      }
+
+      let storeIdFilter = undefined;
+      if (userRole === "store-owner") {
+        const store = await Store.findOne({ owner: userId });
+        if (!store) {
+          return res.status(404).json({ success: false, message: "Store not found or unauthorized" });
+        }
+        storeIdFilter = store._id;
+      }
+
       const result = await PaymentService.processRefund({
         orderId,
         amount,
         reason,
+        storeId: storeIdFilter,
       });
       res.json(result);
     } catch (err) {

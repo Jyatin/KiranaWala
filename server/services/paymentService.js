@@ -5,6 +5,10 @@ const Order = require("../models/order");
 const Product = require("../models/product");
 const InventoryService = require("./inventoryService");
 const CouponService = require("./couponService");
+const {
+  validateOrderStatusTransition,
+  validatePaymentStatusTransition,
+} = require("../utils/orderStateMachine");
 
 // =====================================================
 // PAYMENT PROVIDER ABSTRACTION
@@ -59,7 +63,15 @@ class RazorpayPaymentProvider {
       .createHmac("sha256", this.keySecret)
       .update(payload)
       .digest("hex");
-    return expectedSignature === razorpaySignature;
+    
+    if (typeof razorpaySignature !== "string" || expectedSignature.length !== razorpaySignature.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(
+      Buffer.from(expectedSignature, "utf8"),
+      Buffer.from(razorpaySignature, "utf8")
+    );
   }
 
   verifyWebhookSignature(body, signature, webhookSecret) {
@@ -182,6 +194,12 @@ class PaymentService {
       throw new Error("Payment provider not configured for production");
     }
 
+    if (process.env.ENABLE_MOCK_PAYMENTS !== "true" && process.env.NODE_ENV !== "test") {
+      throw new Error(
+        "Mock payments are disabled. Set ENABLE_MOCK_PAYMENTS=true in non-production environment to enable mock payment provider."
+      );
+    }
+
     console.warn(
       "[PaymentService] Using MockPaymentProvider — Razorpay credentials not configured. This is acceptable for local development only."
     );
@@ -203,7 +221,7 @@ class PaymentService {
       throw new Error("Order not found in database");
     }
 
-    if (order.paymentStatus === "paid" || order.paymentStatus === "captured") {
+    if (order.paymentStatus === "paid") {
       throw new Error("Order has already been paid");
     }
 
@@ -262,7 +280,7 @@ class PaymentService {
   /**
    * Verify and confirm order after successful payment.
    * Commits inventory, increments coupon usage, and updates timeline.
-   * Idempotent: calling twice with same data returns success without side effects.
+   * Atomically claims the order to eliminate double-commit race conditions under concurrency.
    */
   static async confirmPayment({
     orderId,
@@ -278,7 +296,7 @@ class PaymentService {
 
     // Idempotent: already confirmed/paid
     if (
-      (order.paymentStatus === "paid" || order.paymentStatus === "captured") &&
+      order.paymentStatus === "paid" &&
       [
         "confirmed",
         "packing",
@@ -292,11 +310,16 @@ class PaymentService {
       return { success: true, alreadyConfirmed: true, order };
     }
 
+    // Reject if order is in an expired, cancelled, or failed terminal state
+    if (["payment_failed", "cancelled", "refunded", "refund_pending"].includes(order.status)) {
+      throw new Error(`Order cannot be confirmed: order is in '${order.status}' state (reservation expired or cancelled)`);
+    }
+
+    validateOrderStatusTransition(order.status, "confirmed");
+    validatePaymentStatusTransition(order.paymentStatus, "paid");
+
     // Verify signature (skip if already verified via webhook or a confirmed path)
-    if (source === "webhook") {
-      // Webhook signature is verified at the route level
-      order.webhookVerified = true;
-    } else {
+    if (source !== "webhook") {
       const isValid = this.verifySignature({
         razorpayOrderId,
         razorpayPaymentId,
@@ -308,37 +331,56 @@ class PaymentService {
           "Invalid Razorpay payment signature. Payment verification failed."
         );
       }
-      order.signatureVerified = true;
     }
 
-    order.paymentStatus = "paid";
-    order.status = "confirmed";
-    order.razorpayOrderId = razorpayOrderId || order.razorpayOrderId;
-    order.razorpayPaymentId = razorpayPaymentId || order.razorpayPaymentId;
-    if (razorpaySignature && source !== "webhook") {
-      order.razorpaySignature = razorpaySignature;
+    // Atomically claim the state transition to prevent race conditions
+    const claimedOrder = await Order.findOneAndUpdate(
+      {
+        _id: orderId,
+        paymentStatus: { $ne: "paid" },
+        status: { $nin: ["payment_failed", "cancelled", "refunded", "refund_pending"] },
+      },
+      {
+        $set: {
+          paymentStatus: "paid",
+          status: "confirmed",
+          razorpayOrderId: razorpayOrderId || order.razorpayOrderId,
+          razorpayPaymentId: razorpayPaymentId || order.razorpayPaymentId,
+          signatureVerified: source !== "webhook",
+          webhookVerified: source === "webhook",
+          ...(razorpaySignature && source !== "webhook" ? { razorpaySignature } : {}),
+        },
+        $push: {
+          timeline: {
+            status: "confirmed",
+            note: `Payment verified via ${source === "webhook" ? "Razorpay webhook" : "client verification"} (Txn: ${razorpayPaymentId})`,
+            timestamp: new Date(),
+          },
+        },
+      },
+      { new: true }
+    );
+
+    if (!claimedOrder) {
+      const currentOrder = await Order.findById(orderId);
+      if (currentOrder && currentOrder.paymentStatus === "paid") {
+        return { success: true, alreadyConfirmed: true, order: currentOrder };
+      }
+      throw new Error(`Order cannot be confirmed: order is in '${currentOrder?.status || "unknown"}' state (reservation expired or cancelled)`);
     }
-    order.timeline = order.timeline || [];
-    order.timeline.push({
-      status: "confirmed",
-      note: `Payment verified via ${source === "webhook" ? "Razorpay webhook" : "client verification"} (Txn: ${razorpayPaymentId})`,
-      timestamp: new Date(),
-    });
 
-    await order.save();
-
-    // Commit inventory from reserved to sold
-    await InventoryService.commitReservation(order.items);
+    // Commit inventory from reserved to sold exactly once
+    await InventoryService.commitReservation(claimedOrder.items);
 
     // Increment coupon usage if used
-    if (order.couponCode) {
-      await CouponService.recordCouponUsage(order.couponCode);
+    if (claimedOrder.couponCode) {
+      await CouponService.recordCouponUsage(claimedOrder.couponCode);
     }
 
     return {
       success: true,
       message: "Payment verified and order confirmed",
-      order,
+      order: claimedOrder,
     };
   }
 
@@ -358,12 +400,15 @@ class PaymentService {
   }
 
   static async _failOrder(order, razorpayPaymentId, reason) {
-    if (order.paymentStatus === "paid" || order.paymentStatus === "captured") {
+    if (order.paymentStatus === "paid") {
       return { success: false, message: "Order already paid — cannot mark as failed" };
     }
     if (order.status === "payment_failed") {
       return { success: true, alreadyFailed: true, order };
     }
+
+    validateOrderStatusTransition(order.status, "payment_failed");
+    validatePaymentStatusTransition(order.paymentStatus, "failed");
 
     order.paymentStatus = "failed";
     order.status = "payment_failed";
@@ -389,20 +434,50 @@ class PaymentService {
 
   /**
    * Process full or partial refund.
+   * Atomically claims order in 'refund_pending' state before calling provider
+   * to eliminate double-refund race conditions, and conditionally sets final state.
    */
   static async processRefund({
     orderId,
     amount,
     reason = "Customer requested cancellation",
+    storeId,
   }) {
-    const order = await Order.findById(orderId);
-    if (!order) throw new Error("Order not found");
-
-    if (order.paymentStatus !== "paid" && order.paymentStatus !== "captured") {
-      throw new Error(
-        `Cannot refund order with payment status '${order.paymentStatus}'`
-      );
+    // Atomically claim the order before calling provider
+    const claimFilter = {
+      _id: orderId,
+      paymentStatus: "paid",
+      status: { $nin: ["refunded", "refund_pending"] },
+    };
+    if (storeId) {
+      claimFilter.store = storeId;
     }
+
+    const originalOrder = await Order.findOneAndUpdate(
+      claimFilter,
+      {
+        $set: {
+          paymentStatus: "refund_pending",
+          status: "refund_pending",
+        },
+        $push: {
+          timeline: {
+            status: "refund_pending",
+            note: `Refund initiated. Reason: ${reason}`,
+            timestamp: new Date(),
+          },
+        },
+      },
+      { new: false }
+    );
+
+    if (!originalOrder) {
+      throw new Error("Cannot refund order: order not found or not eligible for refund");
+    }
+
+    const originalStatus = originalOrder.status;
+    const originalPaymentStatus = originalOrder.paymentStatus;
+    const order = originalOrder;
 
     const refundAmount = amount ? Math.min(amount, order.total) : order.total;
     const refundAmountInPaise = Math.round(refundAmount * 100);
@@ -421,44 +496,95 @@ class PaymentService {
         });
       } catch (err) {
         console.error("Razorpay refund API error:", err.message);
-        // Continue with local state update even if Razorpay call fails
-        // The webhook will reconcile later
+        const isTimeoutOrAmbiguous =
+          err.code === "ETIMEDOUT" ||
+          err.code === "ECONNRESET" ||
+          err.name === "TimeoutError" ||
+          err.message?.toLowerCase().includes("timeout") ||
+          err.message?.toLowerCase().includes("network");
+
+        if (isTimeoutOrAmbiguous) {
+          // Leave in refund_pending
+          // TODO: Reconciliation job will verify final status from Razorpay API/webhook
+          throw new Error(
+            `Refund status ambiguous due to network/timeout error: ${err.message}. Order remains in refund_pending for reconciliation.`
+          );
+        }
+
+        // Definite error from provider — revert back to original status & paymentStatus
+        await Order.findOneAndUpdate(
+          { _id: order._id, paymentStatus: "refund_pending" },
+          {
+            $set: {
+              paymentStatus: originalPaymentStatus,
+              status: originalStatus,
+            },
+            $push: {
+              timeline: {
+                status: originalStatus,
+                note: `Refund failed at provider (${err.message}). Status reverted to ${originalStatus}.`,
+                timestamp: new Date(),
+              },
+            },
+          }
+        );
+        throw new Error(`Refund failed at payment provider: ${err.message}`);
       }
     }
 
-    order.paymentStatus = "refunded";
-    order.status = "refunded";
-    order.timeline = order.timeline || [];
-    order.timeline.push({
-      status: "refunded",
-      note: `Refund of ₹${refundAmount} processed. Reason: ${reason}`,
-      timestamp: new Date(),
-    });
+    // Provider succeeded (or sandbox / mock) — set final refunded state with conditional update
+    const refundedOrder = await Order.findOneAndUpdate(
+      { _id: order._id, paymentStatus: "refund_pending" },
+      {
+        $set: {
+          paymentStatus: "refunded",
+          status: "refunded",
+        },
+        $push: {
+          timeline: {
+            status: "refunded",
+            note: `Refund of ₹${refundAmount} processed. Reason: ${reason}`,
+            timestamp: new Date(),
+          },
+        },
+      },
+      { new: true }
+    );
 
-    await order.save();
+    // Restore stock ONLY for pre-dispatch orders and ONLY if this execution transitioned the order
+    const PRE_DISPATCH_STATUSES = [
+      "placed",
+      "confirmed",
+      "packing",
+      "ready",
+      "processing",
+      "assigned",
+    ];
 
-    // Restore stock
-    for (const item of order.items) {
-      if (item.product) {
-        await Product.updateOne(
-          { _id: item.product },
-          {
-            $inc: {
-              stock: item.quantity,
-              availableStock: item.quantity,
-              soldStock: -item.quantity,
-            },
-          }
-        ).catch(() => {});
+    if (refundedOrder && PRE_DISPATCH_STATUSES.includes(originalStatus)) {
+      for (const item of order.items) {
+        if (item.product) {
+          await Product.updateOne(
+            { _id: item.product },
+            {
+              $inc: {
+                stock: item.quantity,
+                availableStock: item.quantity,
+                soldStock: -item.quantity,
+              },
+            }
+          );
+        }
       }
     }
 
     return {
       success: true,
-      message: `Refund of ₹${refundAmount} processed successfully`,
-      order,
+      message: `Refund of ₹${refundAmount} initiated successfully`,
+      order: refundedOrder || order,
     };
   }
 }
 
 module.exports = PaymentService;
+

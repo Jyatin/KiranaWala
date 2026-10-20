@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "jest --runInBand",
-    "lint": "eslint . --ext .js",
+    "lint": "eslint . --quiet",
     "seed": "node scripts/seedDemoData.js"
   },
   "keywords": [],
