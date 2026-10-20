@@ -458,24 +458,36 @@ async function seedData(options = {}) {
     let storesUpdated = 0;
     let productsCreated = 0;
     let productsUpdated = 0;
-
-    const demoPassword = "Password123!";
+    const isProduction = process.env.NODE_ENV === "production";
+    const allowDemoUsers = !isProduction || process.env.ALLOW_DEMO_SEEDING === "true";
+    const demoPassword = process.env.DEMO_USER_PASSWORD || "Password123!";
 
     // Iterate through all 20 stores
     for (let sIdx = 0; sIdx < STORES_DATA.length; sIdx++) {
       const storeData = STORES_DATA[sIdx];
 
-      // 1. Ensure Store Owner user exists
+      // 1. Ensure Store Owner user exists (strictly blocked in production unless ALLOW_DEMO_SEEDING=true)
       let owner = await User.findOne({ email: storeData.ownerEmail });
       if (!owner) {
+        if (!allowDemoUsers) {
+          console.warn(
+            `[SECURITY] Skipping creation of demo store owner "${storeData.ownerEmail}" in production.`
+          );
+          continue;
+        }
         owner = new User({
           username: storeData.ownerUsername,
           email: storeData.ownerEmail,
           password: demoPassword,
           role: "store-owner",
+          phone: `+91 98000 ${String(sIdx + 1).padStart(5, "0")}`,
+          city: storeData.city,
         });
         await owner.save();
+        storesCreated++;
       }
+
+      if (!owner) continue;
 
       // 2. Ensure Store exists and has image
       let store = await Store.findOne({ owner: owner._id });
@@ -551,49 +563,55 @@ async function seedData(options = {}) {
     }
 
     // 4. Seed Multi-Role System Users (Admin, Delivery Partners, Verified Customers)
-    console.log("\n[USERS] Verifying platform roles...");
-    
-    // Admin
-    let adminUser = await User.findOne({ email: "admin@kiranawala.demo" });
-    if (!adminUser) {
-      adminUser = new User({
-        username: "admin_super",
-        email: "admin@kiranawala.demo",
-        password: demoPassword,
-        role: "admin",
-        phone: "+91 99000 00001",
-        city: "Bengaluru",
-      });
-      await adminUser.save();
-    }
+    if (!allowDemoUsers) {
+      console.warn(
+        "[SECURITY] Demo multi-role accounts (admin, runner, customer) skipped in production environment."
+      );
+    } else {
+      console.log("\n[USERS] Verifying platform roles...");
 
-    // Delivery Partners
-    let runner1 = await User.findOne({ email: "runner_rahul@kiranawala.demo" });
-    if (!runner1) {
-      runner1 = new User({
-        username: "runner_rahul",
-        email: "runner_rahul@kiranawala.demo",
-        password: demoPassword,
-        role: "delivery-partner",
-        phone: "+91 98888 11111",
-        city: "Bengaluru",
-      });
-      await runner1.save();
-    }
+      // Admin
+      let adminUser = await User.findOne({ email: "admin@kiranawala.demo" });
+      if (!adminUser) {
+        adminUser = new User({
+          username: "admin_super",
+          email: "admin@kiranawala.demo",
+          password: demoPassword,
+          role: "admin",
+          phone: "+91 99000 00001",
+          city: "Bengaluru",
+        });
+        await adminUser.save();
+      }
 
-    // Customers
-    let customer1 = await User.findOne({ email: "customer@kiranawala.demo" });
-    if (!customer1) {
-      customer1 = new User({
-        username: "demo_customer",
-        email: "customer@kiranawala.demo",
-        password: demoPassword,
-        role: "customer",
-        phone: "+91 97777 33333",
-        address: "Flat 402, Green Glen Layout, Bellandur",
-        city: "Bengaluru",
-      });
-      await customer1.save();
+      // Delivery Partners
+      let runner1 = await User.findOne({ email: "runner_rahul@kiranawala.demo" });
+      if (!runner1) {
+        runner1 = new User({
+          username: "runner_rahul",
+          email: "runner_rahul@kiranawala.demo",
+          password: demoPassword,
+          role: "delivery-partner",
+          phone: "+91 98888 11111",
+          city: "Bengaluru",
+        });
+        await runner1.save();
+      }
+
+      // Customers
+      let customer1 = await User.findOne({ email: "customer@kiranawala.demo" });
+      if (!customer1) {
+        customer1 = new User({
+          username: "demo_customer",
+          email: "customer@kiranawala.demo",
+          password: demoPassword,
+          role: "customer",
+          phone: "+91 97777 33333",
+          address: "Flat 402, Green Glen Layout, Bellandur",
+          city: "Bengaluru",
+        });
+        await customer1.save();
+      }
     }
 
     // 5. Seed Promotional Coupons
@@ -662,10 +680,27 @@ async function seedData(options = {}) {
   }
 }
 
+/**
+ * Safe cleanup/deactivation procedure for demo accounts in production.
+ */
+async function deactivateDemoAccounts() {
+  const res = await User.updateMany(
+    {
+      $or: [
+        { email: { $regex: "@kiranawala\\.demo$", $options: "i" } },
+        { email: { $in: STORES_DATA.map((s) => s.ownerEmail) } },
+      ],
+    },
+    { $set: { isActive: false } }
+  );
+  console.log(`[SECURITY] Deactivated ${res.modifiedCount} demo accounts.`);
+  return res.modifiedCount;
+}
+
 // Execute if run directly
 if (require.main === module) {
   seedData({ closeConnection: true });
 }
 
-module.exports = { seedData, validateSeedEnvironment };
+module.exports = { seedData, validateSeedEnvironment, deactivateDemoAccounts };
 

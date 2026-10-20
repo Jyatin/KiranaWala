@@ -408,7 +408,9 @@ router.get("/orders/:id/track", authenticateToken, async (req, res) => {
      *   deliveryEtaMinutes. `deliveryOtp` is STRIPPED (must collect verbally from customer).
      * - Admin: Operational tracking timeline. `deliveryOtp` is STRIPPED.
      */
-    const isOwningCustomer = userRole === "customer" || (order.customer && order.customer.toString() === userId.toString());
+    const isOwningCustomer =
+      (userRole === "customer" || userRole === "buyer") &&
+      Boolean(order.customer && order.customer.toString() === userId.toString());
 
     res.json({
       success: true,

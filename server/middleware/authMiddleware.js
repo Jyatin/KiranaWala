@@ -1,6 +1,8 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
 
+const { getJwtSecret } = require("../config/jwt");
+
 const ROLE_ALIASES = {
   customer: "customer",
   buyer: "customer",
@@ -17,7 +19,7 @@ const authenticateToken = (req, res, next) => {
   }
 
   const token = authHeader.split(" ")[1];
-  const secret = process.env.JWT_SECRET || "your_jwt_secret";
+  const secret = getJwtSecret();
 
   jwt.verify(token, secret, (err, decoded) => {
     if (err) {

@@ -130,6 +130,15 @@ router.post("/webhook", async (req, res) => {
         .json({ success: false, message: "Missing x-razorpay-signature header" });
     }
 
+    // Fail-closed: validate signature format (must be 64-char hexadecimal string)
+    const HEX_64_REGEX = /^[a-f0-9]{64}$/i;
+    if (typeof signature !== "string" || !HEX_64_REGEX.test(signature.trim())) {
+      console.error("[Webhook] Invalid signature format: must be 64-char hex");
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid webhook signature" });
+    }
+
     // Fail-closed: req.rawBody must be present (captured via express.json verify callback)
     if (!req.rawBody) {
       console.error("[Webhook] Missing raw request body or unsupported content type");
@@ -146,11 +155,12 @@ router.post("/webhook", async (req, res) => {
       .update(rawBody)
       .digest("hex");
 
-    // Timing-safe signature comparison
+    // Timing-safe signature comparison with strict byte length check
     const expectedBuf = Buffer.from(expectedSig, "utf8");
-    const signatureBuf = Buffer.from(String(signature), "utf8");
+    const signatureBuf = Buffer.from(signature.trim(), "utf8");
     const isSignatureValid =
-      expectedBuf.length === signatureBuf.length &&
+      expectedBuf.length === 64 &&
+      signatureBuf.length === 64 &&
       crypto.timingSafeEqual(expectedBuf, signatureBuf);
 
     if (!isSignatureValid) {

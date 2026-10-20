@@ -10,6 +10,8 @@ const Cart = require("../models/cart");
 const Order = require("../models/order");
 const { authenticateToken, requireCustomer } = require("../middleware/authMiddleware");
 const mongoose = require("mongoose");
+const { getJwtSecret } = require("../config/jwt");
+const { escapeRegex } = require("../utils/sanitize");
 const InventoryService = require("../services/inventoryService");
 const CouponService = require("../services/couponService");
 const PaymentService = require("../services/paymentService");
@@ -41,15 +43,15 @@ router.post("/login", async (req, res) => {
     const user = await User.findOne({ email, role: "customer" });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(401).json({ message: "Invalid email or password" });
     }
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
-      return res.status(400).json({ message: "Invalid password" });
+      return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    const secret = process.env.JWT_SECRET || "your_jwt_secret";
+    const secret = getJwtSecret();
     const token = jwt.sign(
       { userId: user._id, id: user._id, role: user.role, email: user.email },
       secret,
@@ -135,8 +137,8 @@ router.get("/stores/nearby", async (req, res) => {
       },
     ]);
 
-    // Populate owner details excluding password
-    await Store.populate(stores, { path: "owner", select: "-password" });
+    // Populate owner details safely (only public username, never email, phone, or password)
+    await Store.populate(stores, { path: "owner", select: "username" });
 
     res.json(stores);
   } catch (error) {
@@ -151,7 +153,7 @@ router.get("/stores", async (req, res) => {
     const filter = {};
 
     if (q && q.trim()) {
-      const regex = new RegExp(q.trim(), "i");
+      const regex = new RegExp(escapeRegex(q.trim()), "i");
       filter.$or = [
         { name: regex },
         { description: regex },
@@ -160,7 +162,7 @@ router.get("/stores", async (req, res) => {
     }
 
     if (category && category !== "all" && category !== "All") {
-      filter.category = new RegExp(category.trim(), "i");
+      filter.category = new RegExp(escapeRegex(category.trim()), "i");
     }
 
     const stores = await Store.find(filter).populate("owner", "username");
@@ -193,7 +195,7 @@ router.get("/stores/:storeId", async (req, res) => {
       return res.status(400).json({ message: "Invalid store ID" });
     }
 
-    const store = await Store.findById(storeId).populate("owner", "username email");
+    const store = await Store.findById(storeId).populate("owner", "username");
     if (!store) {
       return res.status(404).json({ message: "Store not found" });
     }
@@ -303,11 +305,11 @@ router.get("/products/search", async (req, res) => {
     }
 
     if (category && category !== "All") {
-      filter.category = new RegExp(category.trim(), "i");
+      filter.category = new RegExp(escapeRegex(category.trim()), "i");
     }
 
     if (brand) {
-      filter.brand = new RegExp(brand.trim(), "i");
+      filter.brand = new RegExp(escapeRegex(brand.trim()), "i");
     }
 
     if (minPrice || maxPrice) {
@@ -322,7 +324,7 @@ router.get("/products/search", async (req, res) => {
     }
 
     if (effectiveQuery) {
-      const searchRegex = new RegExp(effectiveQuery, "i");
+      const searchRegex = new RegExp(escapeRegex(effectiveQuery), "i");
       filter.$or = [
         { name: searchRegex },
         { description: searchRegex },
@@ -371,11 +373,11 @@ router.get("/products/compare", async (req, res) => {
     if (name) {
       const searchTerms = name.toString().trim().split(/\s+/).filter(Boolean);
       queryFilter.$or = searchTerms.map((term) => ({
-        name: new RegExp(term, "i"),
+        name: new RegExp(escapeRegex(term), "i"),
       }));
     }
     if (category) {
-      queryFilter.category = new RegExp(category.toString().trim(), "i");
+      queryFilter.category = new RegExp(escapeRegex(category.toString().trim()), "i");
     }
 
     const matchedProducts = await Product.find(queryFilter)

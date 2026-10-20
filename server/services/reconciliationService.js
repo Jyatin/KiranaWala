@@ -1,8 +1,8 @@
 "use strict";
 
 const Order = require("../models/order");
+const Product = require("../models/product");
 const PaymentService = require("./paymentService");
-const InventoryService = require("./inventoryService");
 
 /**
  * Payment Reconciliation Service
