@@ -9,6 +9,9 @@ out/
 build/
 dist/
 
+# TypeScript Build Cache
+*.tsbuildinfo
+
 # Environment Variables & Secrets
 .env
 .env.*
