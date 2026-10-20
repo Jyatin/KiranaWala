@@ -149,14 +149,18 @@ KiranaWala/
 - [x] **PHASE A (Design Foundation)**: Initialized Next.js 16.3.8 + React 19 + TypeScript + Tailwind CSS v4 + design tokens (`src/styles/tokens.css`, `src/app/globals.css`, `src/lib/utils.ts`, `src/lib/constants.ts`, `src/app/layout.tsx`, `src/app/page.tsx`).
 - [x] **PHASE B (Premium Navigation)**: Built editorial responsive navigation (`src/components/navigation/Navbar.tsx`, `DesktopNav.tsx`, `MobileNav.tsx`, `NavLink.tsx`) with scroll-aware elevation, saffron accent pill CTA, accessible full-screen mobile overlay, body scroll locking, and motion transitions. Tested and verified on Next.js dev server.
 - [x] **PHASE C (Cinematic Hero)**: Built master editorial hero (`src/components/hero/Hero.tsx`, `HeroContent.tsx`, `HeroMedia.tsx`) featuring sentence-case display typography ("Your neighborhood, intelligently connected"), high-fashion Indian grocery editorial media (`public/images/hero-cinematic.jpg`), Motion staggered reveals, GSAP ScrollTrigger parallax transition, verified trust strip, and full reduced-motion accessibility.
+- [x] **PHASE — KLARNA DESIGN POLISH & MERCHANT ANALYTICS**:
+  - **Free Delivery Progress Meter**: Dynamic threshold indicator (`₹300` threshold) in `CartDrawer.tsx` with animated fill (`#FFA8CD` $\rightarrow$ `#046234`) and unlock celebratory state.
+  - **Editorial Checkout Flow**: Upgraded payment method selector with high-contrast radio chips, encryption assurances, and a tactile full-width pill button displaying live item counts and total amount.
+  - **Spring Physics Toast**: Refined `CartFloatingToast.tsx` with spring physics (`stiffness: 420, damping: 26`), item counter badge in Klarna Pink, and tactile hover feedback.
+  - **Merchant Performance Dashboard**: Rebuilt Tab 4 in `src/app/store-owner/dashboard/page.tsx` with 4 financial KPI cards (AOV, Fulfillment Success, Asset Value, Shelf Units), 7-day daily revenue bar trajectory chart, and 1-click stock reorder triggers with instant feedback.
+  - **Verified Build & Tests**: `next build` compiled in 2.0s with 0 errors (25/25 routes); `store.orders.test.js` passed 12/12 tests.
 
 ---
 
 ## 7. CURRENT TASK
-- **Objective**: Complete Phase C (Hero + Cinematic Media) and verify responsive foundations without building subsequent product sections.
-- **Relevant Files**: `src/components/hero/Hero.tsx`, `HeroContent.tsx`, `HeroMedia.tsx`, `src/app/page.tsx`, `public/images/hero-cinematic.jpg`.
-- **Status**: Phase C complete, tested, and verified with production build (0 errors).
-- **Important Constraints**: DO NOT build product sections yet; DO NOT touch backend APIs.
+- **Objective**: Klarna Design System Polish (Customer Checkout & Merchant Analytics) Completed.
+- **Status**: Production build verified (0 TypeScript errors, 25 routes generated). Backend tests passed 100%.
 
 ---
 

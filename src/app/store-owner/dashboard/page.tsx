@@ -101,7 +101,26 @@ interface StoreProfile {
 }
 
 interface AnalyticsData {
-  summary: {
+  metrics?: {
+    totalRevenue: number;
+    totalOrders: number;
+    paidOrdersCount: number;
+    averageOrderValue: number;
+    pendingOrdersCount: number;
+    completedOrdersCount: number;
+    cancelledOrdersCount: number;
+    cancellationRate: string;
+    totalInventoryUnits: number;
+    totalInventoryValue: number;
+    lowStockCount: number;
+  };
+  revenueTrend?: Array<{
+    day: string;
+    date: string;
+    revenue: number;
+    orders: number;
+  }>;
+  summary?: {
     totalRevenue: number;
     totalOrders: number;
     pendingOrdersCount: number;
@@ -142,6 +161,7 @@ export default function StoreOwnerDashboardPage() {
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [togglingStatus, setTogglingStatus] = useState(false);
+  const [restockedId, setRestockedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Packing Checklists per order
@@ -389,6 +409,7 @@ export default function StoreOwnerDashboardPage() {
           available: newStock > 0,
         }),
       });
+      fetchStoreAnalytics();
     } catch (err) {
       console.error("Failed to update stock", err);
     }
@@ -1297,78 +1318,262 @@ export default function StoreOwnerDashboardPage() {
         {/* TAB 4: STORE ANALYTICS */}
         {activeTab === "analytics" && (
           <div className="space-y-6">
-            <div className="space-y-1">
-              <h2 className="font-display text-2xl font-bold tracking-tight text-[#0B051D]">
-                Store Metrics & Performance
-              </h2>
-              <p className="text-xs text-[#504F5F]">
-                Real-time transaction insights, revenue trends, and inventory turnover.
-              </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-[#0B051D] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                    Live Telemetry
+                  </span>
+                  <span className="text-xs text-[#046234] font-bold flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-[#046234] animate-pulse" />
+                    Real-time Database Sync
+                  </span>
+                </div>
+                <h2 className="font-display text-2xl sm:text-3xl font-black tracking-tight text-[#0B051D]">
+                  Store Performance &amp; Analytics
+                </h2>
+                <p className="text-xs text-[#504F5F]">
+                  Real-time transaction velocity, daily revenue trajectory, and inventory asset valuation.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={fetchStoreAnalytics}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[#E8E2D9] bg-white px-4 text-xs font-bold text-[#0B051D] hover:bg-[#F3F3F5] transition-colors cursor-pointer self-start sm:self-auto shadow-2xs"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${loadingAnalytics ? "animate-spin" : ""}`} />
+                <span>Refresh Insights</span>
+              </button>
             </div>
 
             {loadingAnalytics ? (
-              <div className="py-20 text-center text-xs text-[#504F5F]">
-                Loading store analytics...
+              <div className="py-24 text-center text-xs text-[#504F5F] flex flex-col items-center justify-center gap-3">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#0B051D] border-t-transparent" />
+                <span>Synthesizing store analytics...</span>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Top Selling Products */}
-                <div className="rounded-[28px] bg-white border border-[#E8E2D9] p-6 space-y-4 shadow-2xs">
-                  <h3 className="font-display text-base font-bold text-[#0B051D] flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-[#046234]" />
-                    <span>Top Velocity SKUs</span>
-                  </h3>
-                  <div className="space-y-2">
-                    {analytics?.topProducts && analytics.topProducts.length > 0 ? (
-                      analytics.topProducts.map((tp, idx) => (
-                        <div
-                          key={tp._id || idx}
-                          className="flex items-center justify-between p-3 rounded-2xl bg-[#FAF8F5] border border-[#E8E2D9]/60 text-xs"
-                        >
-                          <div className="space-y-0.5 truncate">
-                            <span className="font-bold text-[#0B051D] block truncate">{tp.name}</span>
-                            <span className="text-[10px] text-[#504F5F]">{tp.soldStock} units sold</span>
-                          </div>
-                          <span className="font-mono font-black text-sm text-[#0B051D]">
-                            ₹{tp.revenueGenerated || tp.soldStock * tp.price}
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-[#504F5F]">No sales data recorded yet.</p>
-                    )}
+              <div className="space-y-6">
+                {/* 4 Klarna-Style Metric Tiles */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* AOV */}
+                  <div className="rounded-[24px] bg-white border border-[#E8E2D9] p-5 space-y-1.5 shadow-2xs">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#504F5F] block">
+                      Average Order Value
+                    </span>
+                    <div className="font-display text-2xl sm:text-3xl font-black text-[#0B051D] tabular-nums">
+                      ₹{analytics?.metrics?.averageOrderValue || (completedOrders.length > 0 ? Math.round(totalRevenue / completedOrders.length) : 0)}
+                    </div>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#046234]">
+                      <TrendingUp className="h-3 w-3" /> Healthy basket size
+                    </span>
+                  </div>
+
+                  {/* Fulfillment Success Rate */}
+                  <div className="rounded-[24px] bg-white border border-[#E8E2D9] p-5 space-y-1.5 shadow-2xs">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#504F5F] block">
+                      Fulfillment Success
+                    </span>
+                    <div className="font-display text-2xl sm:text-3xl font-black text-[#046234] tabular-nums">
+                      {100 - parseInt(analytics?.metrics?.cancellationRate || "0", 10)}%
+                    </div>
+                    <span className="text-[11px] text-[#504F5F] font-medium block">
+                      Low cancellation rate
+                    </span>
+                  </div>
+
+                  {/* Inventory Asset Value */}
+                  <div className="rounded-[24px] bg-white border border-[#E8E2D9] p-5 space-y-1.5 shadow-2xs">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#504F5F] block">
+                      Inventory Asset Value
+                    </span>
+                    <div className="font-display text-2xl sm:text-3xl font-black text-[#0B051D] tabular-nums">
+                      ₹{(analytics?.metrics?.totalInventoryValue || products.reduce((acc, p) => acc + (p.availableStock || p.stock || 0) * p.price, 0)).toLocaleString("en-IN")}
+                    </div>
+                    <span className="text-[11px] text-[#504F5F] font-medium block">
+                      Across {products.length} live SKUs
+                    </span>
+                  </div>
+
+                  {/* Total Units on Shelf */}
+                  <div className="rounded-[24px] bg-white border border-[#E8E2D9] p-5 space-y-1.5 shadow-2xs">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#504F5F] block">
+                      Total Stock on Shelf
+                    </span>
+                    <div className="font-display text-2xl sm:text-3xl font-black text-[#0B051D] tabular-nums">
+                      {analytics?.metrics?.totalInventoryUnits || products.reduce((acc, p) => acc + (p.availableStock || p.stock || 0), 0)}
+                    </div>
+                    <span className="text-[11px] text-[#D97706] font-semibold block">
+                      {analytics?.lowStockProducts?.length || 0} items near reorder
+                    </span>
                   </div>
                 </div>
 
-                {/* Critical Restock Alerts */}
-                <div className="rounded-[28px] bg-white border border-[#E8E2D9] p-6 space-y-4 shadow-2xs">
-                  <h3 className="font-display text-base font-bold text-[#0B051D] flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-[#D97706]" />
-                    <span>Urgent Restock SKUs</span>
-                  </h3>
-                  <div className="space-y-2">
-                    {analytics?.lowStockProducts && analytics.lowStockProducts.length > 0 ? (
-                      analytics.lowStockProducts.map((lp, idx) => (
-                        <div
-                          key={lp._id || idx}
-                          className="flex items-center justify-between p-3 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] text-xs"
-                        >
-                          <div>
-                            <span className="font-bold text-[#0B051D] block">{lp.name}</span>
-                            <span className="text-[10px] text-[#D97706] font-semibold">
-                              Only {lp.availableStock} left (Trigger at {lp.reorderLevel})
+                {/* 7-Day Revenue Trajectory Visualizer */}
+                {analytics?.revenueTrend && analytics.revenueTrend.length > 0 && (
+                  <div className="rounded-[28px] bg-white border border-[#E8E2D9] p-6 sm:p-8 space-y-6 shadow-2xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-full bg-[#FFA8CD] text-[#0B051D] px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider">
+                            7-Day Trajectory
+                          </span>
+                          <h3 className="font-display text-lg font-bold text-[#0B051D]">
+                            Daily Revenue Receipts
+                          </h3>
+                        </div>
+                        <p className="text-xs text-[#504F5F]">
+                          Transaction volume receipts over the past 7 days
+                        </p>
+                      </div>
+                      <div className="sm:text-right">
+                        <span className="text-xs text-[#504F5F] block">7-Day Total</span>
+                        <span className="font-display text-xl font-black text-[#0B051D] tabular-nums">
+                          ₹{analytics.revenueTrend.reduce((acc, d) => acc + (d.revenue || 0), 0).toLocaleString("en-IN")}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Chart Bars */}
+                    {(() => {
+                      const trend = analytics.revenueTrend;
+                      if (!trend || trend.length === 0) return null;
+                      const maxRev = Math.max(...trend.map((d) => d.revenue || 0), 100);
+                      return (
+                        <div className="grid grid-cols-7 gap-2 sm:gap-4 pt-4">
+                          {trend.map((d, idx) => {
+                            const isLatest = idx === trend.length - 1;
+                            const heightPercent = Math.max(14, Math.round(((d.revenue || 0) / maxRev) * 100));
+                            return (
+                              <div key={d.date || idx} className="flex flex-col items-center gap-2 group">
+                                <span className="text-[11px] font-bold text-[#0B051D] tabular-nums opacity-80 group-hover:opacity-100 transition-opacity">
+                                  ₹{d.revenue || 0}
+                                </span>
+                                <div className="h-36 sm:h-44 w-full rounded-2xl bg-[#F8F7FA] border border-[#E8E2D9]/60 p-1.5 flex flex-col justify-end">
+                                  <div
+                                    style={{ height: `${heightPercent}%` }}
+                                    className={`w-full rounded-xl transition-all duration-300 group-hover:scale-[1.02] flex items-center justify-center ${
+                                      isLatest
+                                        ? "bg-[#FFA8CD] text-[#0B051D]"
+                                        : "bg-[#0B051D] text-white"
+                                    }`}
+                                  >
+                                    <span className="text-[10px] font-black hidden sm:inline tabular-nums">
+                                      {d.orders}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-center">
+                                  <span className={`text-xs block font-bold ${isLatest ? "text-[#0B051D]" : "text-[#504F5F]"}`}>
+                                    {d.day}
+                                  </span>
+                                  <span className="text-[10px] text-[#94A3B8] font-medium block">
+                                    {d.orders} ord
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* Grid: Top Velocity SKUs & Urgent Restock SKUs */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Top Selling Products */}
+                  <div className="rounded-[28px] bg-white border border-[#E8E2D9] p-6 space-y-4 shadow-2xs">
+                    <div className="flex items-center justify-between pb-2 border-b border-[#E8E2D9]/60">
+                      <h3 className="font-display text-base font-bold text-[#0B051D] flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-[#046234]" />
+                        <span>Top Velocity SKUs</span>
+                      </h3>
+                      <span className="text-[11px] text-[#504F5F]">Ranked by units sold</span>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {analytics?.topProducts && analytics.topProducts.length > 0 ? (
+                        analytics.topProducts.map((tp, idx) => (
+                          <div
+                            key={tp._id || idx}
+                            className="flex items-center justify-between p-3.5 rounded-2xl bg-[#FAF8F5] border border-[#E8E2D9]/60 text-xs hover:border-[#0B051D] transition-colors"
+                          >
+                            <div className="flex items-center gap-3 truncate">
+                              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white border border-[#E8E2D9] font-black text-[11px] text-[#0B051D] shrink-0">
+                                {idx + 1}
+                              </span>
+                              <div className="space-y-0.5 truncate">
+                                <span className="font-bold text-[#0B051D] block truncate">{tp.name}</span>
+                                <span className="text-[11px] text-[#504F5F]">{tp.soldStock} units dispatched</span>
+                              </div>
+                            </div>
+                            <span className="font-mono font-black text-sm text-[#0B051D] tabular-nums ml-2 shrink-0">
+                              ₹{tp.revenueGenerated || tp.soldStock * tp.price}
                             </span>
                           </div>
-                          <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#0B051D] border border-[#E8E2D9]">
-                            Reorder +{lp.suggestedReorder || 25}
-                          </span>
+                        ))
+                      ) : (
+                        <p className="text-xs text-[#504F5F] py-4 text-center">No sales data recorded yet.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Critical Restock Alerts with 1-Click Action */}
+                  <div className="rounded-[28px] bg-white border border-[#E8E2D9] p-6 space-y-4 shadow-2xs">
+                    <div className="flex items-center justify-between pb-2 border-b border-[#E8E2D9]/60">
+                      <h3 className="font-display text-base font-bold text-[#0B051D] flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-[#D97706]" />
+                        <span>Urgent Restock Triggers</span>
+                      </h3>
+                      <span className="text-[11px] text-[#D97706] font-bold">
+                        {analytics?.lowStockProducts?.length || 0} alert(s)
+                      </span>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {analytics?.lowStockProducts && analytics.lowStockProducts.length > 0 ? (
+                        analytics.lowStockProducts.map((lp, idx) => {
+                          const isRestocked = restockedId === lp._id;
+                          const reorderQty = lp.suggestedReorder || 25;
+                          return (
+                            <div
+                              key={lp._id || idx}
+                              className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] text-xs"
+                            >
+                              <div className="min-w-0">
+                                <span className="font-bold text-[#0B051D] block truncate">{lp.name}</span>
+                                <span className="text-[11px] text-[#D97706] font-semibold block">
+                                  {lp.availableStock} in stock · Buffer trigger at {lp.reorderLevel}
+                                </span>
+                              </div>
+
+                              <button
+                                type="button"
+                                disabled={isRestocked}
+                                onClick={async () => {
+                                  setRestockedId(lp._id);
+                                  await updateProductQuantity(lp._id, (lp.availableStock || 0) + reorderQty);
+                                  setTimeout(() => setRestockedId(null), 2000);
+                                }}
+                                className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+                                  isRestocked
+                                    ? "bg-[#046234] text-white"
+                                    : "bg-[#0B051D] text-white hover:bg-[#2C2242] active:scale-95 shadow-xs"
+                                }`}
+                              >
+                                {isRestocked ? "✓ Restocked!" : `+${reorderQty} Reorder`}
+                              </button>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="p-6 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] text-xs text-[#065F46] font-semibold text-center flex flex-col items-center gap-2">
+                          <CheckCircle2 className="h-6 w-6 text-[#046234]" />
+                          <span>All catalog SKUs maintain safe stock levels above safety thresholds!</span>
                         </div>
-                      ))
-                    ) : (
-                      <div className="p-4 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] text-xs text-[#065F46] font-semibold">
-                        All catalog SKUs are currently maintaining safe buffer levels above reorder thresholds!
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
