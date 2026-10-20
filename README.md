@@ -61,7 +61,6 @@ Most sample e-commerce applications trust the browser for totals, suffer from ov
 10. [Deployment & Production Operations](#10-deployment-production-operations)
 11. [Engineering Trade-offs & Deep-Dives](#11-engineering-trade-offs-deep-dives)
 12. [Codebase Exploration Guide](#12-codebase-exploration-guide)
-13. [Other Projects](#13-other-projects)
 
 ---
 
@@ -660,37 +659,6 @@ To review the core implementation, inspect these key source files:
 4. **Automated Testing Suite:**
    - [server/__tests__/security.audit.stage1to6.test.js](server/__tests__/security.audit.stage1to6.test.js) — Security regression assertions covering Stages 1 through 6.
    - [server/__tests__/inventory.concurrency.benchmark.test.js](server/__tests__/inventory.concurrency.benchmark.test.js) — Concurrency benchmark testing 100 simultaneous checkouts on a single item.
-
-
----
-
-## 13. Other Projects
-
-Alongside KiranaWala, I build projects across AI security, civic technology, and smart-city research.
-
-### 🛡️ [VoxShield — AI-Powered Voice Deepfake Detection](https://github.com/Jyatin/VoiceGuard)
-
-An audio-security prototype that analyzes live microphone input and uploaded recordings to estimate whether speech is authentic or synthetic, with supporting acoustic visualizations and model confidence.
-
-- **Focus:** Voice deepfake detection, audio forensics, real-time inference.
-- **Technology:** React, TypeScript, FastAPI, Python, and an E4 raw-waveform CNN.
-- **Explore:** [Source code](https://github.com/Jyatin/VoiceGuard)
-
-### 💧 [JalDrishti 2030 — Predictive Urban Water-Stress Planning](https://github.com/Jyatin/Repository-name-JalDrishti-2030)
-
-A research-driven IoT–AI digital-twin prototype exploring how data provenance, water-stress analysis, representative hydraulic scenarios, and intervention optimisation can support neighbourhood-scale water planning in Bengaluru. It is a decision-support research prototype, not a live water-control system or a calibrated city-wide hydraulic model.
-
-- **Focus:** Smart-city research, water-stress analysis, data provenance, and intervention planning.
-- **Technology:** Next.js, TypeScript, Tailwind CSS, and FastAPI.
-- **Explore:** [Live demo](https://repository-name-jal-drishti-2030-9o.vercel.app) · [Source code](https://github.com/Jyatin/Repository-name-JalDrishti-2030)
-
-### 📍 [FixMyWay — AI-Assisted Civic Issue Reporting](https://github.com/Jyatin/-fixmyway)
-
-A mobile app for reporting and tracking civic problems such as potholes, damaged roads, waste, and broken streetlights. It combines AI-assisted image analysis, GPS-based reporting, nearby-issue duplicate detection, community verification, and issue tracking.
-
-- **Focus:** Civic-tech mobile development, geospatial workflows, and AI-assisted reporting.
-- **Technology:** React Native, Expo, TypeScript, Firebase, and Google Gemini Vision.
-- **Explore:** [Source code](https://github.com/Jyatin/-fixmyway)
 
 
 ---
