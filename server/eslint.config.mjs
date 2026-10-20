@@ -22,8 +22,8 @@ export default [
       },
     },
     rules: {
-      // Add any custom ESLint rules here if needed
-      // Example: 'no-unused-vars': 'warn' // Warn about unused variables
+      "prettier/prettier": "warn",
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
 ];

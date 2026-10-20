@@ -23,12 +23,39 @@ export interface StoredAuth {
   email: string | null;
 }
 
+export function isTokenExpired(token: string | null | undefined): boolean {
+  if (!token) return true;
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return true;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    const parsed = JSON.parse(jsonPayload);
+    if (!parsed.exp) return false;
+    // Buffer with 15 seconds to prevent race conditions on requests in flight
+    return Date.now() >= (parsed.exp * 1000) - 15000;
+  } catch {
+    return true;
+  }
+}
+
 export function getStoredAuth(): StoredAuth {
   if (typeof window === "undefined") {
     return { token: null, role: null, storeId: null, username: null, email: null };
   }
 
   const token = localStorage.getItem("token");
+  if (token && isTokenExpired(token)) {
+    clearStoredAuth();
+    return { token: null, role: null, storeId: null, username: null, email: null };
+  }
+
   const role = localStorage.getItem("role");
   const storeId = localStorage.getItem("storeId");
   const username = localStorage.getItem("username");
@@ -64,8 +91,8 @@ export function setStoredAuth(params: {
     localStorage.setItem("userEmail", email);
   }
 
-  // Set cookies for Next.js edge middleware
-  const maxAge = 86400 * 7; // 7 days
+  // Set cookies for Next.js edge middleware (aligned to 24h token lifetime)
+  const maxAge = 86400; // 24 hours
   document.cookie = `kw_token=${encodeURIComponent(token)}; path=/; max-age=${maxAge}; SameSite=Lax`;
   document.cookie = `kw_role=${encodeURIComponent(role)}; path=/; max-age=${maxAge}; SameSite=Lax`;
 }

@@ -2,25 +2,27 @@ services:
   server:
     build:
       context: .
-      dockerfile: server/Dockerfile 
+      dockerfile: server/Dockerfile
     ports:
       - "3000:3000"
     environment:
-      - MONGO_URI=mongodb://mongo:27017/kiranawala
+      - NODE_ENV=production
+      - MONGO_URI=${MONGO_URI:-mongodb://mongo:27017/kiranawala}
+      - JWT_SECRET=${JWT_SECRET}
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3001}
     depends_on:
       - mongo
 
   mongo:
-    image: mongo
-    ports:
-      - "27017:27017"
+    image: mongo:6-jammy
+    # Do not publish port to host interface in production; internal container network only
+    expose:
+      - "27017"
     volumes:
       - mongo-data:/data/db
-
-  frontend:
-    build: ./public
-    ports:
-      - "80:80"
 
 volumes:
   mongo-data:

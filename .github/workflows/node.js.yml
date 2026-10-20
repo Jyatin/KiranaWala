@@ -1,57 +1,55 @@
-name: Node.js CI 
+name: KiranaWala CI - Build & Test Suite
 
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push events but only for the main branch
   push:
     branches: [ main ]
-  # Allows you to run this workflow manually from the Actions tab
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
-  build:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest # Using a Linux runner is common and often faster for Node.js
+  test-and-build:
+    runs-on: ubuntu-latest
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
+    services:
+      mongodb:
+        image: mongo:6-jammy
+        ports:
+          - 27017:27017
+
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v3
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
 
-      # Sets up Node.js environment
-      - name: Use Node.js 18.x # Adjust the version if needed
-        uses: actions/setup-node@v3
+      - name: Setup Node.js 20 LTS
+        uses: actions/setup-node@v4
         with:
-          node-version: 18.x
-          cache: 'npm' # Cache npm dependencies to speed up subsequent runs
-          cache-dependency-path: server/package-lock.json # Point to your package-lock.json
+          node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
 
-      # Installs dependencies using 'npm ci' which is generally recommended for CI
-      # It uses package-lock.json for deterministic installs
-      - name: Install Dependencies
-        working-directory: ./server # Run npm commands in the server directory
+      - name: Install Server Dependencies
+        working-directory: ./server
         run: npm ci
 
-      # Add this new step to run the unit tests
-      - name: Run Backend Unit Tests
-        working-directory: ./server # Run the test command in the server directory
-        run: npm test # Executes the "test": "jest" script from server/package.json
+      - name: Run Backend Unit & Integration Tests
+        working-directory: ./server
+        env:
+          NODE_ENV: test
+          MONGO_URI: mongodb://127.0.0.1:27017/kiranawala_ci_test
+          JWT_SECRET: kiranawala_ci_test_jwt_secret_32_chars_long!
+          RAZORPAY_WEBHOOK_SECRET: rzp_test_ci_webhook_secret_32_chars!
+        run: npm test -- --runInBand
 
+      - name: Install Frontend Dependencies
+        run: npm ci
 
+      - name: Run Frontend TypeScript Check
+        run: npm run type-check
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-        
+      - name: Build Next.js Production Bundle
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3000
+        run: npm run build

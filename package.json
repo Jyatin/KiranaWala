@@ -1,5 +1,5 @@
 {
-  "name": "claude",
+  "name": "kiranawala",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -8,7 +8,8 @@
     "start": "next start",
     "server": "node server/server.js",
     "seed": "node server/scripts/seedDemoData.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "type-check": "tsc --noEmit",
+    "test": "npm test --prefix server"
   },
   "keywords": [],
   "author": "",
