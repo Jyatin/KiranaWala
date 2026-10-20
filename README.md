@@ -73,37 +73,21 @@ KiranaWala implements a **zero-trust e-commerce backend architecture** where the
 
 ### Application Interface Demonstrations
 
-```text
-+--------------------------------------------------------------------------------------------------+
-| <!-- SCREENSHOT PLACEHOLDER: Customer Storefront & Dynamic Discovery Drawer -->                   |
-| Caption: Customer Storefront — Real-time store discovery, neighborhood area filtering,           |
-| and single-store inventory browsing. (Capture: /shop and /stores)                                |
-+--------------------------------------------------------------------------------------------------+
-```
+#### 1. Customer Storefront & Store Discovery
+![KiranaWala Customer Storefront and Store Discovery](docs/screenshots/storefront.png)
+*Figure 1: Customer Storefront — Real-time store discovery across Bengaluru neighborhoods (e.g., HSR Layout, Indiranagar) with category filter pills, delivery badges, and store cards.*
 
-```text
-+--------------------------------------------------------------------------------------------------+
-| <!-- SCREENSHOT PLACEHOLDER: Single-Store Cart Drawer & Authoritative Checkout -->                |
-| Caption: Single-Store Cart Drawer — Server-authoritative subtotal, delivery fee calculation,      |
-| and coupon validation. (Capture: /cart checkout modal)                                           |
-+--------------------------------------------------------------------------------------------------+
-```
+#### 2. Cart & Authoritative Checkout
+![KiranaWala Cart Drawer and Checkout Interface](docs/screenshots/cart-checkout.png)
+*Figure 2: Single-Store Cart Drawer — Server-authoritative subtotal calculations, dynamic delivery fee rules, coupon application (`KIRANA50`), and single-store consistency enforcement.*
 
-```text
-+--------------------------------------------------------------------------------------------------+
-| <!-- SCREENSHOT PLACEHOLDER: Merchant POS & Stock Management Dashboard -->                       |
-| Caption: Merchant Portal — Inventory counter, stock toggle, and live incoming order lifecycle    |
-| controls. (Capture: /store-owner/dashboard)                                                      |
-+--------------------------------------------------------------------------------------------------+
-```
+#### 3. Merchant POS & Stock Management Dashboard
+![KiranaWala Store Owner Dashboard and Inventory Management](docs/screenshots/merchant-dashboard.png)
+*Figure 3: Merchant Dashboard — Store operational controls including store open/close toggle, real-time incoming order lifecycle queue, and catalog inventory stock counters.*
 
-```text
-+--------------------------------------------------------------------------------------------------+
-| <!-- SCREENSHOT PLACEHOLDER: Real-Time Live Order Tracking with OTP Verification -->              |
-| Caption: Order Tracking — Step-by-step fulfillment timeline with customer-only delivery OTP     |
-| concealment. (Capture: /customer/orders/[id])                                                    |
-+--------------------------------------------------------------------------------------------------+
-```
+#### 4. Real-Time Order Tracking & Delivery Handshake
+![KiranaWala Order Tracking Timeline and Delivery OTP](docs/screenshots/order-tracking.png)
+*Figure 4: Order Tracking Interface — End-to-end fulfillment timeline (`out_for_delivery` stage), assigned delivery partner details, ETA countdown, and customer-only secret delivery OTP.*
 
 ---
 
