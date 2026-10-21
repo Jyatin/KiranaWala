@@ -5,6 +5,7 @@
 [![Node.js CI](https://github.com/Jyatin/KiranaWala/actions/workflows/node.js.yml/badge.svg)](https://github.com/Jyatin/KiranaWala/actions/workflows/node.js.yml)
 [![Lint](https://github.com/Jyatin/KiranaWala/actions/workflows/lint.yml/badge.svg)](https://github.com/Jyatin/KiranaWala/actions/workflows/lint.yml)
 [![Tests](https://github.com/Jyatin/KiranaWala/actions/workflows/node.js.yml/badge.svg?branch=main&label=Tests)](https://github.com/Jyatin/KiranaWala/actions/workflows/node.js.yml)
+[![Security tests](https://img.shields.io/badge/Security-tests-blueviolet.svg)](QA_REPORT.md)
 
 **Live app:** [kirana-wala-1nhp.vercel.app](https://kirana-wala-1nhp.vercel.app) · **QA report:** [QA_REPORT.md](QA_REPORT.md) · **API reference:** [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 
@@ -39,7 +40,7 @@ KiranaWala digitizes neighborhood Indian kirana stores, helping customers discov
 | Server-side pricing | Backend recalculates product prices, fees, and discounts instead of trusting client totals. |
 | Atomic inventory | Conditional MongoDB updates use `$inc` with `$gte` to reserve stock safely under concurrent checkout. |
 | Razorpay HMAC verification | Validates payment signatures using HMAC-SHA256 and timing-safe comparisons. |
-| Reconciliation worker | Rechecks pending payments with Razorpay and repairs eligible stale order states. |
+| Reconciliation worker | Background worker that reconciles missed payment webhooks. |
 | Delivery OTP | Customer OTP verification protects delivery completion, with attempt limits and lockout. |
 
 ## Architecture
