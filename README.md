@@ -4,7 +4,7 @@
 
 [![Node.js CI](https://github.com/Jyatin/KiranaWala/actions/workflows/node.js.yml/badge.svg)](https://github.com/Jyatin/KiranaWala/actions/workflows/node.js.yml)
 [![Lint](https://github.com/Jyatin/KiranaWala/actions/workflows/lint.yml/badge.svg)](https://github.com/Jyatin/KiranaWala/actions/workflows/lint.yml)
-[![Jest Tests](https://img.shields.io/badge/Jest-316%2B%20passing-success)](QA_REPORT.md)
+[![Tests](https://github.com/Jyatin/KiranaWala/actions/workflows/node.js.yml/badge.svg?branch=main&label=Tests)](https://github.com/Jyatin/KiranaWala/actions/workflows/node.js.yml)
 
 **Live app:** [kirana-wala-1nhp.vercel.app](https://kirana-wala-1nhp.vercel.app) · **QA report:** [QA_REPORT.md](QA_REPORT.md) · **API reference:** [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 
@@ -81,6 +81,6 @@ Configure `server/.env` and ensure MongoDB is running. Start the API with `npm r
 
 ## Docs and author
 
-More detail: [QA/security report](QA_REPORT.md) · [REST API reference](docs/API_REFERENCE.md) · [Audit baseline](docs/AUDIT_BASELINE.md) · [Payment/inventory review](docs/PAYMENT_INVENTORY_CODE_REVIEW.md)
+More detail: [QA/security report](QA_REPORT.md) · [REST API reference](docs/API_REFERENCE.md) · [Order and payment workflows](docs/WORKFLOWS.md) · [Audit baseline](docs/AUDIT_BASELINE.md) · [Payment/inventory review](docs/PAYMENT_INVENTORY_CODE_REVIEW.md)
 
 **Jyatin Singh** · [GitHub](https://github.com/Jyatin) · [LinkedIn](https://www.linkedin.com/in/jyatinsingh/)
