@@ -9,7 +9,7 @@
 [![MongoDB](https://img.shields.io/badge/MongoDB-6.x%20%7C%20Mongoose%208-green.svg)](https://www.mongodb.com/)
 [![Jest Tests](https://img.shields.io/badge/Jest%20Tests-301%20Passing%20(100%25)-success.svg)](https://jestjs.io/)
 [![Security Audit](https://img.shields.io/badge/Security-Hardened%20(Stages%201--7)-blueviolet.svg)](./QA_REPORT.md)
-[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](./package.json)
+[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](./LICENSE)
 
 > **A production-oriented hyperlocal grocery platform featuring backend-authoritative pricing, atomic inventory reservations, timing-safe Razorpay HMAC verification, and role-segregated fulfillment workflows.**
 
