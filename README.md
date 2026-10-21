@@ -615,8 +615,8 @@ For detailed schemas and error responses, see the [Full REST API Reference](docs
 ### Production Hosting Architecture
 - **Frontend Web Application:** Deployed to [Vercel](https://vercel.com/) with automatic Next.js App Router route optimization and edge caching.
 - **Backend API Service:** Deployed to [Render](https://render.com/) as a containerized web service.
-- **Database:** [MongoDB Atlas](https://www.mongodb.com/atlas).
-- **Payment Gateway:** Razorpay integration configured through environment variables.
+- **Database:** [MongoDB Atlas](https://www.mongodb.com/atlas) M0 Free tier.
+- **Payment Gateway:** Razorpay live-mode integration configured through environment variables.
 
 ### Operational Resilience Checklist
 - [x] **Fail-Fast Boot:** Server terminates on startup if critical environment variables (`JWT_SECRET`, `MONGO_URI`) are missing or insecure.
