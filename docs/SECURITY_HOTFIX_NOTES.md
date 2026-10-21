@@ -8,7 +8,7 @@
 ## 1. Vulnerability 1: Unauthenticated Order Tracking Delivery OTP Leak
 
 ### What was wrong
-The endpoint `GET /api/delivery/orders/:id/track` ([server/routes/deliveryRoutes.js:248-315](file:///c:/Users/ENOVO/Downloads/KiranaWala-main/KiranaWala-main/server/routes/deliveryRoutes.js#L248-L315)) had no authentication middleware (`authenticateToken`). Anyone with a valid `orderId` could query the endpoint and receive:
+The endpoint `GET /api/delivery/orders/:id/track` ([server/routes/deliveryRoutes.js:248-315](../server/routes/deliveryRoutes.js#L248-L315)) had no authentication middleware (`authenticateToken`). Anyone with a valid `orderId` could query the endpoint and receive:
 - Unhashed `deliveryOtp`
 - Delivery address and phone numbers
 - Real-time fulfillment progress stages
@@ -30,7 +30,7 @@ The endpoint `GET /api/delivery/orders/:id/track` ([server/routes/deliveryRoutes
 3. **Role-Based OTP & PII Sanitization:**
    - Plaintext `deliveryOtp` is returned **strictly to the owning customer** (`...(isOwningCustomer && { deliveryOtp: order.deliveryOtp })`).
    - Store owners, delivery partners, and admins receive operational stages and timeline without the customer's delivery OTP.
-4. **Frontend Integration:** Updated `fetchTracking` in [src/app/customer/orders/[id]/page.tsx:92](file:///c:/Users/ENOVO/Downloads/KiranaWala-main/KiranaWala-main/src/app/customer/orders/%5Bid%5D/page.tsx#L92) to pass `Authorization: Bearer ${token}`.
+4. **Frontend Integration:** Updated `fetchTracking` in [src/app/customer/orders/[id]/page.tsx:92](../src/app/customer/orders/%5Bid%5D/page.tsx#L92) to pass `Authorization: Bearer ${token}`.
 
 ### Tests Added
 Suite: `server/__tests__/delivery.tracking.security.test.js`
@@ -45,14 +45,14 @@ Suite: `server/__tests__/delivery.tracking.security.test.js`
 ## 2. Vulnerability 2: Insecure Direct Object Reference (IDOR) on Refunds
 
 ### What was wrong
-`POST /api/payments/refund` ([server/routes/paymentRoutes.js:288-306](file:///c:/Users/ENOVO/Downloads/KiranaWala-main/KiranaWala-main/server/routes/paymentRoutes.js#L288-L306)) verified that the caller had the `store-owner` role, but `PaymentService.processRefund({ orderId })` fetched `Order.findById(orderId)` without checking if the store owner owned the store associated with the order. Any authenticated merchant could issue full or partial refunds on any other store's orders across the platform.
+`POST /api/payments/refund` ([server/routes/paymentRoutes.js:288-306](../server/routes/paymentRoutes.js#L288-L306)) verified that the caller had the `store-owner` role, but `PaymentService.processRefund({ orderId })` fetched `Order.findById(orderId)` without checking if the store owner owned the store associated with the order. Any authenticated merchant could issue full or partial refunds on any other store's orders across the platform.
 
 ### How it was reproduced
 Store Owner B (owner of Store B) submitted a `POST /api/payments/refund` with the `orderId` of a paid order belonging to Store A. The endpoint processed the refund, updated the order status to `refunded`, and returned HTTP 200.
 
 ### What changed
-1. **Query-Level Store Ownership Check:** In [server/routes/paymentRoutes.js](file:///c:/Users/ENOVO/Downloads/KiranaWala-main/KiranaWala-main/server/routes/paymentRoutes.js#L288-L315), when `req.user.role === "store-owner"`, the user's store is resolved (`Store.findOne({ owner: userId })`) and `storeId` is passed into `PaymentService.processRefund({ orderId, storeId })`.
-2. In [server/services/paymentService.js:393-410](file:///c:/Users/ENOVO/Downloads/KiranaWala-main/KiranaWala-main/server/services/paymentService.js#L393-L410), `Order.findOne(query)` executes with `{ _id: orderId, store: storeId }`. If the store does not match, the query returns `null` and throws `"Order not found or unauthorized"`, returning HTTP 400/404.
+1. **Query-Level Store Ownership Check:** In [server/routes/paymentRoutes.js](../server/routes/paymentRoutes.js#L288-L315), when `req.user.role === "store-owner"`, the user's store is resolved (`Store.findOne({ owner: userId })`) and `storeId` is passed into `PaymentService.processRefund({ orderId, storeId })`.
+2. In [server/services/paymentService.js:393-410](../server/services/paymentService.js#L393-L410), `Order.findOne(query)` executes with `{ _id: orderId, store: storeId }`. If the store does not match, the query returns `null` and throws `"Order not found or unauthorized"`, returning HTTP 400/404.
 3. **State Validity Guard:** Added check to ensure the order is in a legitimate refundable state (must have `paymentStatus: "paid" | "captured"`, and cannot be in status `"refunded"`, `"refund_pending"`, or `"cancelled"`).
 
 ### Tests Added
@@ -68,7 +68,7 @@ Suite: `server/__tests__/payment.refund.security.test.js`
 ## 3. Vulnerability 3: Delivery Status Transition IDOR (`PATCH /api/delivery/orders/:id/status`)
 
 ### What was wrong
-In [server/routes/deliveryRoutes.js:157-190](file:///c:/Users/ENOVO/Downloads/KiranaWala-main/KiranaWala-main/server/routes/deliveryRoutes.js#L157-L190), the status advancement route allowed any user with a `store-owner` or `delivery-partner` role to advance status on **any** order across the platform:
+In [server/routes/deliveryRoutes.js:157-190](../server/routes/deliveryRoutes.js#L157-L190), the status advancement route allowed any user with a `store-owner` or `delivery-partner` role to advance status on **any** order across the platform:
 - An unrelated Store Owner B could advance stages on Store A's orders.
 - An unassigned delivery runner could advance stages on orders assigned to another runner.
 - Non-owners were receiving 200 or 403 instead of 404.
@@ -99,7 +99,7 @@ Suite: `server/__tests__/delivery.status.security.test.js`
 ## 4. Vulnerability 4: Double-Refund Concurrency Race Condition
 
 ### What was wrong
-In [server/services/paymentService.js:390-455](file:///c:/Users/ENOVO/Downloads/KiranaWala-main/KiranaWala-main/server/services/paymentService.js#L390-L455), the refund flow executed a read-then-write pattern (`Order.findOne` -> `provider.processRefund` -> `order.save()`). When multiple simultaneous refund requests arrived for the same paid order:
+In [server/services/paymentService.js:390-455](../server/services/paymentService.js#L390-L455), the refund flow executed a read-then-write pattern (`Order.findOne` -> `provider.processRefund` -> `order.save()`). When multiple simultaneous refund requests arrived for the same paid order:
 - All concurrent requests read `paymentStatus: "paid"`.
 - All requests invoked the Razorpay API / payment provider simultaneously.
 - Result: **Multiple refunds issued at the payment provider for a single paid order**, draining merchant funds.
