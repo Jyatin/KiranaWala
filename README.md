@@ -23,7 +23,9 @@
 ## ⚡ 30-Second Executive Summary
 
 ### What is KiranaWala?
-KiranaWala digitizes traditional Indian neighborhood grocery stores (*Kiranas*). It gives local merchants an easy-to-use digital storefront, allows neighborhood shoppers to discover nearby stores and place orders with real-time stock visibility, and coordinates local delivery runners with secure, verified handshakes.
+KiranaWala digitizes traditional Indian neighborhood grocery stores (*Kiranas*). It gives local merchants an easy-to-use digital storefront, allows neighborhood shoppers to discover nearby stores and place orders with stock visibility, and coordinates local delivery partners with secure, verified handshakes.
+
+**Why I built this:** Built after talking with neighborhood grocery owners in Indirapuram about how they run inventory and fulfillment.
 
 ### Why does it stand out from a standard e-commerce project?
 Most sample e-commerce applications trust the browser for totals, suffer from overselling when multiple shoppers check out at once, and break if a payment webhook drops. KiranaWala solves these real-world backend engineering challenges with enterprise-grade safeguards:
@@ -65,25 +67,25 @@ Most sample e-commerce applications trust the browser for totals, suffer from ov
 
 ## 1. Application Interface Demonstrations
 
-Screenshots of the customer, merchant, and delivery workflows:
+These screenshots use seeded demo data.
 
 <table>
   <tr>
     <td align="center" width="25%">
       <img src="docs/screenshots/storefront.png" alt="KiranaWala customer storefront and store discovery" width="100%" />
-      <sub><b>1. Storefront</b><br/>Nearby stores, categories, and delivery options.</sub>
+      <sub><b>1. Storefront</b><br/>Seeded neighborhood stores, categories, and delivery options.</sub>
     </td>
     <td align="center" width="25%">
       <img src="docs/screenshots/cart-checkout.png" alt="KiranaWala cart and checkout" width="100%" />
-      <sub><b>2. Cart & Checkout</b><br/>Server-calculated totals, coupons, and single-store checkout.</sub>
+      <sub><b>2. Cart & Checkout</b><br/>Demo cart, checkout totals, and coupon flow.</sub>
     </td>
     <td align="center" width="25%">
       <img src="docs/screenshots/merchant-dashboard.png" alt="KiranaWala merchant dashboard and inventory" width="100%" />
-      <sub><b>3. Merchant Dashboard</b><br/>Order handling and inventory management.</sub>
+      <sub><b>3. Merchant Dashboard</b><br/>Demo order queue and inventory management.</sub>
     </td>
     <td align="center" width="25%">
       <img src="docs/screenshots/order-tracking.png" alt="KiranaWala order tracking and delivery OTP" width="100%" />
-      <sub><b>4. Order Tracking</b><br/>Fulfillment timeline and delivery OTP verification.</sub>
+      <sub><b>4. Order Tracking</b><br/>Demo fulfillment timeline and delivery OTP interface.</sub>
     </td>
   </tr>
 </table>
@@ -99,7 +101,7 @@ KiranaWala uses a decoupled multi-tier architecture that separates the user-faci
 ```mermaid
 graph TD
     subgraph Client ["1. Presentation Layer (Next.js 16 App Router)"]
-        UI["Customer Portal • Merchant POS • Delivery Runner App"]
+        UI["Customer Portal • Merchant POS • Delivery Partner API"]
     end
 
     subgraph Gateway ["2. API Gateway & Security Controls"]
@@ -311,7 +313,7 @@ Signatures are validated using Node.js's built-in `crypto.timingSafeEqual` after
   - `customer`: Can place orders, manage personal cart, and track owned deliveries.
   - `store-owner`: Can edit store catalog, toggle store open/closed, and manage incoming orders.
   - `delivery-partner`: Can browse available deliveries, claim orders, and complete deliveries via OTP.
-  - `admin`: Operations oversight across all stores and users.
+  - `admin`: Admin role (API-level access control).
 
 ---
 
@@ -612,9 +614,9 @@ For detailed schemas and error responses, see the [Full REST API Reference](docs
 
 ### Production Hosting Architecture
 - **Frontend Web Application:** Deployed to [Vercel](https://vercel.com/) with automatic Next.js App Router route optimization and edge caching.
-- **Backend API Service:** Deployed to [Render](https://render.com/) as a containerized web service with automated health check monitoring.
-- **Database:** Managed [MongoDB Atlas](https://www.mongodb.com/atlas) M10 cluster with replica set high availability and automated backup snapshots.
-- **Payment Gateway:** Razorpay live merchant credentials configured with encrypted environment variables.
+- **Backend API Service:** Deployed to [Render](https://render.com/) as a containerized web service.
+- **Database:** [MongoDB Atlas](https://www.mongodb.com/atlas).
+- **Payment Gateway:** Razorpay integration configured through environment variables.
 
 ### Operational Resilience Checklist
 - [x] **Fail-Fast Boot:** Server terminates on startup if critical environment variables (`JWT_SECRET`, `MONGO_URI`) are missing or insecure.
@@ -672,5 +674,3 @@ To review the core implementation, inspect these key source files:
 **Jyatin Singh**
 - GitHub: [@Jyatin](https://github.com/Jyatin)
 - LinkedIn: [Jyatin Singh](https://www.linkedin.com/in/jyatinsingh/)
-
-Special thanks to the neighborhood grocery store owners in Indirapuram who provided operational insights on Kirana fulfillment workflows and inventory constraints.
