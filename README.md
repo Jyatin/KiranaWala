@@ -112,13 +112,14 @@ graph TD
         Inventory["Inventory Service<br/>(Atomic Stock Locking)"]
         OrderPay["Order & Payment Service<br/>(State Machine & Razorpay)"]
         Recon["Reconciliation Worker<br/>(Self-Healing Background Poller)"]
-        Coupon["Coupon & AI Service<br/>(Discounts & Gemini Intent)"]
+        Coupon["Coupon Service<br/>(Discount Validation)"]
+        AI["AI Shopping Service<br/>(Gemini Chat & Tool Calling)"]
     end
 
     subgraph External ["4. Database & External Providers"]
         MongoDB[("MongoDB<br/>(Atomic Updates & Documents)")]
         Razorpay["Razorpay Gateway<br/>(UPI / Cards / Webhooks)"]
-        Gemini["Google Gemini AI<br/>(Shopping Assistant)"]
+        Gemini["Google Gemini API<br/>(Chat Responses & Function Calls)"]
     end
 
     Client --> Gateway
@@ -129,7 +130,8 @@ graph TD
     Recon --> Razorpay
     Recon --> MongoDB
     Coupon --> MongoDB
-    Coupon --> Gemini
+    AI --> MongoDB
+    AI --> Gemini
 ```
 
 ### Architectural Layer Responsibilities
@@ -151,7 +153,7 @@ graph TD
 4. **Data & External Integrations:**
    - **MongoDB 6:** Handles document persistence, flexible order snapshots, and atomic inventory mutations.
    - **Razorpay Payment Gateway:** Manages UPI, Netbanking, and Card transactions with webhook callbacks.
-   - **Google Gemini SDK:** Powers the intelligent conversational shopping assistant.
+   - **Google Gemini SDK:** Generates customer-chat responses and supports function calls for product search, nearby-store lookup, product details, and availability checks. Shopping-intent parsing for preset baskets is handled by local keyword/regex rules, not by a Gemini intent-classification call.
 
 ---
 
@@ -624,6 +626,7 @@ For detailed schemas and error responses, see the [Full REST API Reference](docs
 - [x] **Automated Reconnection:** Mongoose connection listeners recover gracefully from transient network drops without duplicating background workers.
 - [ ] **Distributed Cache (Roadmap):** Replace in-memory sliding window rate limiter with Redis to maintain rate limits across horizontally scaled instances.
 - [ ] **Observability (Roadmap):** Integrate structured JSON logging (Winston/Pino) and OpenTelemetry APM for distributed tracing across payment lifecycles.
+- [ ] **Smart Search (RAG):** in progress.
 
 ---
 
