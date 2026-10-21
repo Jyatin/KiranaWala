@@ -14,7 +14,6 @@
 > **A production-oriented hyperlocal grocery platform featuring backend-authoritative pricing, atomic inventory reservations, timing-safe Razorpay HMAC verification, and role-segregated fulfillment workflows.**
 
 - **Live Application:** [https://kirana-wala-1nhp.vercel.app](https://kirana-wala-1nhp.vercel.app)
-- **Repository:** [https://github.com/Jyatin/KiranaWala](https://github.com/Jyatin/KiranaWala)
 - **Merged Hardening Pull Request:** [PR #36: Security Hardening & Infrastructure Upgrade](https://github.com/Jyatin/KiranaWala/pull/36)
 - **Comprehensive QA Report:** [QA_REPORT.md](./QA_REPORT.md)
 - **Full REST API Reference:** [docs/API_REFERENCE.md](./docs/API_REFERENCE.md)
@@ -66,23 +65,28 @@ Most sample e-commerce applications trust the browser for totals, suffer from ov
 
 ## 1. Application Interface Demonstrations
 
-These genuine captures show the actual rendered application interface running across customer, merchant, and delivery workflows:
+Screenshots of the customer, merchant, and delivery workflows:
 
-#### 1. Customer Storefront & Store Discovery
-![KiranaWala Customer Storefront and Store Discovery](docs/screenshots/storefront.png)
-*Figure 1: Customer Storefront — Real-time store discovery across Bengaluru neighborhoods (e.g., HSR Layout, Indiranagar) with category filter pills, delivery badges, and store cards.*
-
-#### 2. Cart & Authoritative Checkout
-![KiranaWala Cart Drawer and Checkout Interface](docs/screenshots/cart-checkout.png)
-*Figure 2: Single-Store Cart Drawer — Server-authoritative subtotal calculations, dynamic delivery fee rules, coupon application (`KIRANA50`), and single-store consistency enforcement.*
-
-#### 3. Merchant POS & Stock Management Dashboard
-![KiranaWala Store Owner Dashboard and Inventory Management](docs/screenshots/merchant-dashboard.png)
-*Figure 3: Merchant Dashboard — Store operational controls including store open/close toggle, real-time incoming order lifecycle queue, and catalog inventory stock counters.*
-
-#### 4. Real-Time Order Tracking & Delivery Handshake
-![KiranaWala Order Tracking Timeline and Delivery OTP](docs/screenshots/order-tracking.png)
-*Figure 4: Order Tracking Interface — End-to-end fulfillment timeline (`out_for_delivery` stage), assigned delivery partner details, ETA countdown, and customer-only secret delivery OTP.*
+<table>
+  <tr>
+    <td align="center" width="25%">
+      <img src="docs/screenshots/storefront.png" alt="KiranaWala customer storefront and store discovery" width="100%" />
+      <sub><b>1. Storefront</b><br/>Nearby stores, categories, and delivery options.</sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="docs/screenshots/cart-checkout.png" alt="KiranaWala cart and checkout" width="100%" />
+      <sub><b>2. Cart & Checkout</b><br/>Server-calculated totals, coupons, and single-store checkout.</sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="docs/screenshots/merchant-dashboard.png" alt="KiranaWala merchant dashboard and inventory" width="100%" />
+      <sub><b>3. Merchant Dashboard</b><br/>Order handling and inventory management.</sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="docs/screenshots/order-tracking.png" alt="KiranaWala order tracking and delivery OTP" width="100%" />
+      <sub><b>4. Order Tracking</b><br/>Fulfillment timeline and delivery OTP verification.</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
