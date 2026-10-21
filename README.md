@@ -635,7 +635,7 @@ For detailed schemas and error responses, see the [Full REST API Reference](docs
 ### 1. Monolithic API vs. Microservices
 - **Decision:** Build the backend as a modular monolith in Express.js rather than independent microservices.
 - **Why:** For a hyperlocal commerce platform at this stage, microservices introduce distributed transaction overhead, network latency, and operational deployment complexity without justifiable scaling benefits. Modular domain services (`InventoryService`, `PaymentService`, `CouponService`) maintain clean architectural boundaries while operating in a unified process memory space.
-- **Trade-off:** High CPU operations (such as bulk catalog exports or AI inference) can impact API request event-loop latency.
+- **Trade-off:** High-CPU operations (such as bulk catalog exports) can affect API event-loop latency; AI chat also depends on the external Gemini API and can fail when the provider is unavailable.
 
 ### 2. Single-Store Cart Constraint vs. Multi-Store Split Carts
 - **Decision:** Strictly enforce that an order can only contain products from a single physical store.
