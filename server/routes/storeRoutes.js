@@ -257,7 +257,7 @@ router.put(
       const updatedProduct = await Product.findByIdAndUpdate(
         productId,
         updateData,
-        { new: true },
+        { new: true, runValidators: true },
       );
       res.json(updatedProduct);
     } catch (error) {
