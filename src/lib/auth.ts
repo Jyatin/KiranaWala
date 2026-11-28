@@ -5,7 +5,24 @@
  * Store Owners / Merchants.
  */
 
-export type UserRole = "customer" | "store-owner" | "admin" | "delivery-partner";
+export type UserRole =
+  | "customer"
+  | "store-owner"
+  | "merchant"
+  | "admin"
+  | "delivery-partner";
+
+export const VALID_ROLES: readonly UserRole[] = [
+  "customer",
+  "store-owner",
+  "merchant",
+  "admin",
+  "delivery-partner",
+] as const;
+
+export function isValidRole(role: string | null | undefined): role is UserRole {
+  return typeof role === "string" && (VALID_ROLES as readonly string[]).includes(role);
+}
 
 export function isCustomer(role: string | null | undefined): boolean {
   return role === "customer";

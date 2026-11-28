@@ -10,16 +10,22 @@ export default function LoginPage() {
   useEffect(() => {
     const { token, role } = getStoredAuth();
 
-    if (token && isCustomer(role)) {
+    if (!token) {
+      router.replace("/customer/login");
+      return;
+    }
+
+    if (isCustomer(role)) {
       router.replace("/shop");
       return;
     }
 
-    if (token && isMerchant(role)) {
+    if (isMerchant(role)) {
       router.replace("/merchant/dashboard");
       return;
     }
 
+    // Unrecognized or invalid roles redirect to customer login
     router.replace("/customer/login");
   }, [router]);
 
